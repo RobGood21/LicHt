@@ -1,7 +1,14 @@
+/*
+waarom dit?
+*/
+
+
+
 void setup()
 {
 
   /* add setup code here */
+
 	pinMode(13, OUTPUT);
 }
 
@@ -16,7 +23,5 @@ void loop()
 	}
 	delay (500);
 	//dit is een change
-
-
 
 }
