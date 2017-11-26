@@ -4,6 +4,10 @@
  Author:	gebruiker
 */
 
+#include <FastLED.h>
+#define NUM_LEDS 60
+#define DATA_PIN 6
+
 // the setup function runs once when you press reset or power the board
 void setup() {
 	pinMode(13, OUTPUT);
