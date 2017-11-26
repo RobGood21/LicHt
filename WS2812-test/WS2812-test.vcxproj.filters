@@ -15,11 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="WS2812.ino" />
+    <None Include="WS2812_test.ino" />
   </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="__vm\.WS2812.vsarduino.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-  </ItemGroup>
+ 
 </Project>
