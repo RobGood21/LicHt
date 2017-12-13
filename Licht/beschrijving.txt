@@ -1,0 +1,5 @@
+DeKoder
+Shield gemaakt met opto, eerst interrupt werkend krijgen op PIN2
+zet sreg bit 7 (sei() , zet bitSet(EIMSK, INT0);met EICRA 4 mogelijkheden in te stellen
+de ISR is een lastige, kijk in de lijst van de datasheet 12.4 kies de vector type: ISR(vectornaam_vect){} dat is um...
+ISR werkt nu op PIN2 any change
