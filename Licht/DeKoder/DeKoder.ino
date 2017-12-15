@@ -19,10 +19,15 @@ unsigned int Tduur; //gemeten duur van periode tussen twee interupts
 byte DekReg; //register voor de decoder 
 byte DekStatus = 0;
 byte byteRX[6]; //max length commandoos for this decoder 6 bytes (5x data 1x error check)
+byte countPA = 0; //counter for preample
 
-byte commandfree;
-
-
+byte BufReg[12]; //registerbyte for 12 command buffers
+byte Buf0[12];
+byte Buf1[12];
+byte Buf2[12];
+byte Buf3[12];
+byte Buf4[12];
+byte Buf5[12];
 
 
 void setup() {
@@ -98,13 +103,14 @@ ISR(INT0_vect) { //syntax voor een ISR
 			}
 		}
 	}
-	if (bitRead(DekReg, 0) == false) failed();
+	if (bitRead(DekReg, 0) == false) begin();
 
 	PINB |= (1 << 5); //toggle pin 13
 	sei();
 }
-void failed() {//runs when bit is corrupted, or command not correct
+void begin() {//runs when bit is corrupted, or command not correct
 	lesscount++;
+	countPA = 0;
 	DekReg = 0;
 	DekStatus = 0;
 	for (int i = 0; i < 6; i++) {
@@ -112,9 +118,10 @@ void failed() {//runs when bit is corrupted, or command not correct
 	}
 }
 void BitRX() { //handles recieved bits
-	static byte countPA = 0; //counter for preample
+	
 	static byte countbit = 0; //counter received bits
 	static byte countbyte = 0; //counter received bytes
+	byte n = 0;
 
 	switch (DekStatus) {
 	
@@ -126,7 +133,6 @@ void BitRX() { //handles recieved bits
 				DekStatus = 1;
 				countbit = 0;
 				countbyte = 0;
-				countPA = 0; //reset preamplecounter for next command
 
 				for (int i = 0; i < 6; i++) {
 					byteRX[i] = 0; //reset receive array
@@ -135,7 +141,7 @@ void BitRX() { //handles recieved bits
 			}
 		}
 		else {
-			failed(); //received zero bit, not allowed in Dekstatus 0
+			begin(); //received false bit, not allowed in Dekstatus 0
 		}
 		break;
 
@@ -154,7 +160,7 @@ void BitRX() { //handles recieved bits
 			DekStatus = 3;
 			
 			countbyte ++; //bij teveel ontvangen bytes...? hier uitspringen?
-			if (countbyte > 5) failed(); //this command cannot be handled by this decoder
+			if (countbyte > 5) begin(); //this command cannot be handled by this decoder
 			
 		}
 		break;
@@ -164,21 +170,41 @@ void BitRX() { //handles recieved bits
 			DekStatus = 2;
 		}
 		else { //true bit
-			if (countbyte > 2) {
+			if (countbyte > 2) { //***
 				//put received data in command buffer, exeption for idle packet do not store this in buffer 255-0-255
+				if (byteRX[0] == B11111111) { 
+					//idl packed or broadcast command, no handling needed
+					begin(); //start over
+				}
+				else { 
+				//bufreg[12] and buf0~buf5
+				//find free commandbuffer
 
-			}
+				for (int i; i < 12; i++) { //mind, when no free buffer is found, command wil always go to buffer 11
+					if (bitRead(BufReg[i],7) == false) {	
+						n = i;
+						break;
+					}
+				}
+//n=free buffer
+				//claim buffer
+				BufReg[n] = countbyte; //qnty of bytes
+				bitSet(BufReg[n], 7);
+				//copy to buffer
+				Buf0[n] = byteRX[0];
+				Buf1[n] = byteRX[1];
+				Buf2[n] = byteRX[2];
+				Buf3[n] = byteRX[3];
+				Buf4[n] = byteRX[4];
+				Buf5[n] = byteRX[5];
+				begin(); //restart process
+				}
+			} //***
 			else { //not yet 3 bytes received, is minimum.
-				failed(); //reset all data, start over
+				begin(); //reset all data, start over
 			}
-
 		}
-
-
 	}
-
-
-
 
 	switch (bitRead(DekReg, 3)) {
 	case true:
@@ -191,40 +217,83 @@ void BitRX() { //handles recieved bits
 
 }
 
+void DCCh() { //handles incoming DCC commands
+	static byte n = 0; //one buffer each passing
+	byte temp;
+	//Validate new command
+	if (bitRead(BufReg[n], 7) == true) { //*
+		//Validate basic accessory decoder packet bit7 true, bit 6 false
+		
+
+	temp = Buf0[n];
+Serial.print(bitRead(temp, 7));
+Serial.print(bitRead(temp, 6));
+Serial.print(bitRead(temp, 5));
+Serial.print(bitRead(temp, 4));
+Serial.print(bitRead(temp, 3));
+Serial.print(bitRead(temp, 2));
+Serial.print(bitRead(temp, 1));
+Serial.print(bitRead(temp, 0));
+Serial.println("");
+
+temp = Buf1[n];
+Serial.print(bitRead(temp, 7));
+Serial.print(bitRead(temp, 6));
+Serial.print(bitRead(temp, 5));
+Serial.print(bitRead(temp, 4));
+Serial.print(bitRead(temp, 3));
+Serial.print(bitRead(temp, 2));
+Serial.print(bitRead(temp, 1));
+Serial.print(bitRead(temp, 0));
+Serial.println("");
+
+temp = Buf2[n];
+Serial.print(bitRead(temp, 7));
+Serial.print(bitRead(temp, 6));
+Serial.print(bitRead(temp, 5));
+Serial.print(bitRead(temp, 4));
+Serial.print(bitRead(temp, 3));
+Serial.print(bitRead(temp, 2));
+Serial.print(bitRead(temp, 1));
+Serial.print(bitRead(temp, 0));
+Serial.println("");
+Serial.println("");
+Serial.println("");
+
+
+
+
+	temp = temp >> 6;
+
+	if (temp == 2) {
+	PINB |= (1 << 4); //toggle pin 12	
+	}	
+
+	bitClear(BufReg[n], 7); //free buffer
+	} //*	
+	n++;
+	if (n > 12)n = 0;
+}
+
 // the loop function runs over and over again until power down or reset
 void loop() {
-
-	if ((millis() - Tijd) > 3000) { //knipperlichie op pin 12
-		PINB |= (1 << 4);  
-		Tijd = millis();
-		//getelde waardes tonen
-
-		Serial.print("Aantal true=  ");
-		Serial.println(truecount);
-		Serial.print("Aantal false=  ");
-		Serial.println(falsecount);
-		
-		
-		Serial.print("Aantal failed=  ");
-		Serial.println(lesscount);
-		Serial.println("");
+	DCCh();
 /*
+	if ((millis() - Tijd) > 5000) {
+		for (int i; i < 12; i++) {
+			if (bitRead(BufReg[i], 7) == true) {
+			Serial.println(Buf0[i]);
+			Serial.println(Buf1[i]);
+			Serial.println(Buf2[i]);
+			Serial.println(Buf3[i]);
+			Serial.println(Buf4[i]);
+			Serial.println(Buf5[i]);
+			Serial.println("");
+			bitClear(BufReg[i], 7);
+			}
+			
 
-		Serial.print("Aantal ertussenin=  ");
-		Serial.println(splitcount);
-		Serial.print("Aantal meer=  ");
-		Serial.println(morecount);
-		
-*/
-
-		//counters resetten
-		lesscount = 0;
-		truecount = 0;
-		splitcount = 0;
-		falsecount = 0;
-		morecount = 0;
-
+		}
 	}
-
-
+*/
 }
