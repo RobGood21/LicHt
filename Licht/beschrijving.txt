@@ -5,3 +5,4 @@ de ISR is een lastige, kijk in de lijst van de datasheet 12.4 kies de vector typ
 ISR werkt nu op PIN2 any change
 Tijd meten tussen twee interupts. 
 Bufreg   bit7=free(false) notfree (true)
+Dekreg  bit0=check for correct timing; 
