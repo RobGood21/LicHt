@@ -4,5 +4,6 @@ zet sreg bit 7 (sei() , zet bitSet(EIMSK, INT0);met EICRA 4 mogelijkheden in te 
 de ISR is een lastige, kijk in de lijst van de datasheet 12.4 kies de vector type: ISR(vectornaam_vect){} dat is um...
 ISR werkt nu op PIN2 any change
 Tijd meten tussen twee interupts. 
-Bufreg   bit7=free(false) notfree (true) bit0=CV(true)
-Dekreg  bit0=check for correct timing; 
+DEK_Bufreg   bit7=free(false) notfree (true) bit0=CV(true) or switch(false)
+DEK_reg  bit0=check for correct timing; 
+Variabel DEK_monitor toont DCC monitor (true)

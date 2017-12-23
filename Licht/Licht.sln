@@ -12,6 +12,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		beschrijving.txt = beschrijving.txt
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LicHt", "LicHt\LicHt.vcxproj", "{72D25B2E-3711-4274-BB6A-04F08149DD75}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -26,6 +28,10 @@ Global
 		{59F6087F-CB29-4896-B990-10BDE75173F8}.Debug|x86.Build.0 = Debug|Win32
 		{59F6087F-CB29-4896-B990-10BDE75173F8}.Release|x86.ActiveCfg = Release|Win32
 		{59F6087F-CB29-4896-B990-10BDE75173F8}.Release|x86.Build.0 = Release|Win32
+		{72D25B2E-3711-4274-BB6A-04F08149DD75}.Debug|x86.ActiveCfg = Debug|Win32
+		{72D25B2E-3711-4274-BB6A-04F08149DD75}.Debug|x86.Build.0 = Debug|Win32
+		{72D25B2E-3711-4274-BB6A-04F08149DD75}.Release|x86.ActiveCfg = Release|Win32
+		{72D25B2E-3711-4274-BB6A-04F08149DD75}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
