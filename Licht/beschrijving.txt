@@ -7,3 +7,6 @@ Tijd meten tussen twee interupts.
 DEK_Bufreg   bit7=free(false) notfree (true) bit0=CV(true) or switch(false)
 DEK_reg  bit0=check for correct timing; 
 Variabel DEK_monitor toont DCC monitor (true)
+Modeltijd klok mt_min en mt_hr, minuten en uren. na 24 uur reset volgende dag.
+Periode voorlopig ingesteld op constante tday
+Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichting pin6-events

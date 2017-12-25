@@ -11,17 +11,40 @@
 
 #include <FastLED.h>
 
-#define LQ 64 //aantal leds in ledstring
-#define LP 8 //pin waar de ledstring op komt
-CRGB fastled[LQ];
+//#define LQ 64 //aantal leds in ledstring
+#define LPdl 8 //pin waar de daglicht ledstring op komt
+#define LPvl 7 //pin voor verlichting string
+#define LPev 6 //Pin voor events ledstrip
 
+#define tday 24 //tday how long is a modeltimeday in minutes
+
+
+CRGB led_dl[64];
+CRGB led_vl[64];
+CRGB led_ev[64];
 
 //Temp declaration during design, debugging
-unsigned long Tijd;
+
 //Declaraties
-int COM_DCCAdres=65;//basic adres
-int LED_adresmin;
-int LED_adresmax;
+int COM_DCCAdres=64;
+
+unsigned long Clk;
+unsigned int mt; //modeltime minute
+unsigned int mt_min; //modeltimeclock minutes 
+unsigned int mt_hr; //modeltimeclock hours
+
+//Zorg dat bij programmeren altijd een BASIS adres wordt genomen. dus 1=(1-4)2=(5-8) 3=(9-12) 4=(13-16) 5 6 enz 
+
+//basic adres, adres Daylight decoder DL +1 
+//VL (verlichting) decoder 16 adresses higher
+//EV (events) decoder 16adresses higher
+
+int DL_adresmin;
+int DL_adresmax;
+int VL_adresmin;
+int VL_adresmax;
+int EV_adresmin;
+int EV_adresmax;
 
 
 volatile unsigned long DEK_Tperiode; //laatst gemeten tijd 
@@ -45,14 +68,20 @@ void setup() {
 	//test mode
 	DDRB |= (1 << 5);	//pin13
 	DDRB |= (1 << 4);  //Pin12 als output
-	Tijd = millis();
-	//Fastled part
-	FastLED.addLeds<NEOPIXEL, LP>(fastled, LQ);
-	LED_adresmin = ((COM_DCCAdres - 1) * 4) + 1;
-	LED_adresmax = LED_adresmin + LQ - 1;
+	Clk = millis();
 
-	Serial.println(LED_adresmin);
-	Serial.println(LED_adresmax);
+	//Fastled part
+	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, 64); //create strip of 64 leds on pin 8 'Daglicht'
+	FastLED.addLeds<NEOPIXEL, LPvl>(led_vl, 64);//create strip of 64 leds on pin7 'verlichting'
+	FastLED.addLeds<NEOPIXEL, LPev>(led_ev, 64);//create strip of 64 leds on pin6 'Events'
+	
+	DL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
+	DL_adresmax = DL_adresmin + 63;
+	VL_adresmin = DL_adresmax + 1;
+	VL_adresmax = VL_adresmin + 63;
+	EV_adresmin = VL_adresmax + 1;
+	EV_adresmax = EV_adresmin + 63;
+	
 
 	//DeKoder part, interrupt on PIN2
 	DDRD &= ~(1 << 2);//bitClear(DDRD, 2); //pin2 input
@@ -60,6 +89,44 @@ void setup() {
 	EICRA |= (1 << 0);//EICRA – External Interrupt Control Register A bit0 > 1 en bit1 > 0 (any change)
 	EICRA &= ~(1 << 1);	//bitClear(EICRA, 1);
 	EIMSK |= (1 << INT0);//bitSet(EIMSK, INT0);//EIMSK – External Interrupt Mask Register bit0 INT0 > 1
+
+	//program part
+	mt = (tday * 1000) / 24;
+
+	Opening();
+}
+
+void Opening() {
+	Serial.println("");
+	Serial.println("");
+	Serial.println("Welkom bij LicHT");
+	Serial.println("Een wisselmotor.nl project");
+	Serial.println("-------------------");
+	Serial.println("Instellingen:");
+	Serial.print("Decoder adres: ");
+	Serial.print(COM_DCCAdres);
+	Serial.print(" (");
+	Serial.print(((COM_DCCAdres-1)*4)+1);
+	Serial.print("-");
+	Serial.print(((COM_DCCAdres - 1) * 4) + 4);
+	Serial.println(")");
+	Serial.print("adressen daglicht leds van ");
+	Serial.print(DL_adresmin);
+	Serial.print(" tot en met ");
+	Serial.println(DL_adresmax);
+	Serial.print("adressen verlichting leds van ");
+	Serial.print(VL_adresmin);
+	Serial.print(" tot en met ");
+	Serial.println(VL_adresmax);
+	Serial.print("adressen gebeurtenissen leds van ");
+	Serial.print(EV_adresmin);
+	Serial.print(" tot en met ");
+	Serial.println(EV_adresmax);
+	Serial.println("");
+	Serial.print("Dag, 24uur in modeltijd duurt ");
+	Serial.print(tday);
+	Serial.println(" minuten.");
+
 }
 ISR(INT0_vect) { //syntax voor een ISR
 				 //isr van PIN2
@@ -360,7 +427,47 @@ void COM_exe(boolean type, int decoder, int channel, boolean port, boolean onoff
 	adres = ((decoder - 1) * 4) + channel;
 	//Applications 
 	//APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
-	APP_Leds(type, adres, decoder, channel, port, onoff, cv, value);
+	APP_DL(type, adres, decoder, channel, port, onoff, cv, value);
+	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
+	APP_EV(type, adres, decoder, channel, port, onoff, cv, value);
+}
+void COM_Clk() {
+	
+	if (millis() - Clk > mt) { //1 minute in modelrailroad time
+			//modelroad time. 1 day standard 24 minutes. (can be updated by CV, DCC or calculation faster of slower)
+			//minium timing is an hour modelroad time, faster events will be done on real time
+		Clk = millis();
+		mt_min ++;
+		PINB |=(1 << 5); // toggle led on pin 13
+		if (mt_min == 60) {
+			mt_min = 0;
+			mt_hr ++;
+			if (mt_hr == 24) {
+				mt_hr = 0;
+			}
+		}
+	}
+}
+void COM_ProgramAssign() {
+	//plays, assigns programs only 1 every cycle
+	static unsigned cpa=0;
+
+	switch (cpa) {
+	case 0:
+		break;
+	case 1:
+		break;
+	case 2:
+		PRG_flashlight();
+		break;
+	case 3:
+		break;
+	case 4:
+		break;
+		//up to max programs 64?
+	}
+	cpa++;
+	if (cpa > 64) cpa = 0; //start over next cycle
 }
 
 void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
@@ -401,25 +508,81 @@ void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port
 	}
 	Serial.println("");
 }
-void APP_Leds(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
-//	adress for this dekoder?
-	if (adres >= LED_adresmin & adres <= LED_adresmax) {
+void APP_DL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
+//Daglicht 64leds
+	if (adres >= DL_adresmin & adres <= DL_adresmax) {
 		if (port == true) {
 			PORTB |= (1 << 4);
+			led_dl[adres-DL_adresmin]= 0x000033; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
 		}
 		else {
 			PORTB &= ~(1 << 4);
+			led_dl[adres - DL_adresmin] = 0x000000;			
 		}
+		FastLED.show();	
 	}
+}
+void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
+	//Verlichting 64leds
+	if (adres >= VL_adresmin & adres <= VL_adresmax) {
+		if (port == true) {
+			PORTB |= (1 << 5);
+			led_vl[adres - VL_adresmin] = 0x330000; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
+		}
+		else {
+			PORTB &= ~(1 << 5);
+			led_vl[adres - VL_adresmin] = 0x000000;
+		}
+		FastLED.show();
+	}
+}
+void APP_EV(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
+	//Events 64leds
+	if (adres >= EV_adresmin & adres <= EV_adresmax) {
+		if (port == true) {
+			PORTB |= (1 << 5);
+			led_ev[adres - EV_adresmin] = 0x003300; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
+		}
+		else {
+			PORTB &= ~(1 << 5);
+			led_ev[adres - EV_adresmin] = 0x000000;
+		}
+		FastLED.show();
+	}
+}
 
+void PRG_flashlight() {
+//PINB |= (1 << 4);
+	//led 1 is in ev line led 1 led2 in ev lin led5
+	//test program voor een knipperlicht
+	static int ft = 100; //flashtime 100ms
+	static unsigned long f=0;
+	static byte lr = 0;
+	if ((mt_min > 0) & (mt_min < 10)) {
+		if (millis() - f > ft) {			
+			f = millis();
+			lr ^= (1 << 0);
+			if (bitRead(lr, 0) == true) {
+				led_ev[1] = 0xAA0000;
+				led_ev[5] = 0x000000;
+			}
+			else {
+				led_ev[1] = 0x000000;
+				led_ev[5] = 0xAA0000;
+			}
+			FastLED.show();
+		}
+
+		}
+		if (mt_min == 10) {
+			led_ev[0] = 0x000000;
+			led_ev[5] = 0x000000;
+			FastLED.show();
+	}
 }
 
 void loop() {
-
+	COM_Clk();
+	COM_ProgramAssign();
 	DEK_DCCh();
-
-
-	//if ((millis() - Tijd) > 10) {
-	//Tijd = millis();
-	//}
 }
