@@ -16,7 +16,7 @@
 #define LPvl 7 //pin voor verlichting string
 #define LPev 6 //Pin voor events ledstrip
 
-#define tday 24 //tday how long is a modeltimeday in minutes
+#define tday 15 //tday how long is a modeltimeday in minute 24 is good value lager dan 10 werkt het geheel niet goed
 
 
 CRGB led_dl[64];
@@ -27,6 +27,11 @@ CRGB led_ev[64];
 
 //Declaraties
 int COM_DCCAdres=64;
+byte COM_reg; //bit0 test PRG active(true)
+byte PRG_reg[64]; //bit0 active(true) bit1=initialised (true) bit7-bit5 exclusive for program
+byte PRG_min[64]; //Time next active minute
+byte PRG_hr[64]; //Time next actice hour
+
 
 unsigned long Clk;
 unsigned int mt; //modeltime minute
@@ -439,37 +444,47 @@ void COM_Clk() {
 		Clk = millis();
 		mt_min ++;
 		PINB |=(1 << 5); // toggle led on pin 13
-		if (mt_min == 60) {
+		if (mt_min > 60) {
 			mt_min = 0;
 			mt_hr ++;
-			if (mt_hr == 24) {
+			if (mt_hr > 24) {
 				mt_hr = 0;
 			}
 		}
 	}
 }
 void COM_ProgramAssign() {
-	//plays, assigns programs only 1 every cycle
-	static unsigned cpa=0;
-
-	switch (cpa) {
-	case 0:
-		break;
-	case 1:
-		break;
-	case 2:
-		PRG_flashlight();
-		break;
-	case 3:
-		break;
-	case 4:
-		break;
-		//up to max programs 64?
+	//plays, assigns programs only 1 every cycle 
+	//first 64 active programs 1by1 then only 1 not active programs, then 64 active and so on. 
+	static unsigned pa; //program active
+	static unsigned pna;//program not active
+	if (bitRead(COM_reg, 0) == true) { //find active program
+		if (bitRead(PRG_reg[pa], 0) == true) COM_ps(pa);
+		pa++;
+		if (pa > 64) {
+			pa = 0;
+			COM_reg &= ~(1 << 0); //reset bit 0, next cycle not active
+		}
 	}
-	cpa++;
-	if (cpa > 64) cpa = 0; //start over next cycle
+	else { //find not-active program
+		if ((PRG_hr[pna] == mt_hr)& (PRG_min[pna] == mt_min))COM_ps(pna);
+		COM_reg |= (1 << 0); //next cycle active
+		pna++;
+		if (pna > 64)pna = 0;
+	}
 }
-
+void COM_ps(int pn) { //ps=program switch
+	//total, max 64 programs
+	//1-10 daylight and weather 11/30 lighting houses and streetlights  31 > no idea yet
+	switch (pn) {
+	case 11:
+		PRG_flashlight(pn);
+		break;
+	default:
+		//all not defined programs// do nothing
+		break;
+	}
+}
 void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//application for DCC monitor
 	if (type == true) {
@@ -551,35 +566,99 @@ void APP_EV(boolean type, int adres, int decoder, int channel, boolean port, boo
 	}
 }
 
-void PRG_flashlight() {
-//PINB |= (1 << 4);
-	//led 1 is in ev line led 1 led2 in ev lin led5
-	//test program voor een knipperlicht
-	static int ft = 100; //flashtime 100ms
-	static unsigned long f=0;
-	static byte lr = 0;
-	if ((mt_min > 0) & (mt_min < 10)) {
-		if (millis() - f > ft) {			
-			f = millis();
-			lr ^= (1 << 0);
-			if (bitRead(lr, 0) == true) {
-				led_ev[1] = 0xAA0000;
-				led_ev[5] = 0x000000;
-			}
-			else {
-				led_ev[1] = 0x000000;
-				led_ev[5] = 0xAA0000;
-			}
-			FastLED.show();
-		}
+
+
+void PRG_flashlight(int pn) {//
+	/*
+voorbeeld van een PRG_ in LicHt
+knipperlicht op twee leds in vl (verlichting)
+programma geeft iedere 10 minuten na het uur, 5 minuten een knipperlicht. 
+
+declaraties voor dit PRG_
+PRG_reg[n]gebruik:
+bit7: status knipperlict welk helft is aan
+bit6: 
+bit5:
+bit4:
+
+Dit programma gebruikt 2leds
+
+doorloop verkort
+-declaraties van variabelen en gebruik van de bits in PRG_reg[n] voor dit programma
+-Instellen voor als arduino is gestart.
+-eerste aanroep vanuit COM_ps, programma actief maken, voorwaarde voor stoppen instellen
+-programma uitvoeren
+-voorwaarde voor stoppen bereikt, programma stoppen en voorwaarde voor opnieuw starten instellen.
+
+*/
+	static unsigned int eindtijd; //wanneer stoppen
+	static int ft = 125; //flashtime 100ms
+	static unsigned long f = 0;
+
+	//******************initialiseren 
+	//bij eerste doorloop bit 1 in PRG_reg[n] is dan false. Geeft aan dat PRG_ nog niet is ingesteld
+	//Moet ieder programma mee beginnen.
+	//gebruikte leds bepalen.
+	
+	if (bitRead(PRG_reg[pn], 1) == false) {//init
+		PRG_reg[pn] |= (1 << 1);//set initialiseer bit
+		PRG_hr[pn] = 0; //zet uur waar programma actief moet worden
+		PRG_min[pn] = 10;//zet minuut waar program in actief moet worden.
+	}
+	else { //no init needed
+
+		//**************program actief
+		//Dus instellingen bij eerste doorloop
+		//Program is nu aangeroepen vanuit COM_ps
+		//als PTG_reg[n] bit 0 false is dan is dit de eerste keer in deze actieve cyclus
+		//nu dus actie in gang zetten
+		//diverse nog in te stellen parameters kunnen gebruikt worden om het proces te stoppen.
+		//stoppen gebeurt door dit bit weer false te maken.
+		//De ingestelde tijd hr en min zullen bij bereiken deze PRG_ weer aanroepen. 
+
+		if (bitRead(PRG_reg[pn], 0) == false) { //nog niet actief, eerste doorloop
+			PRG_reg[pn] |= (1 << 0); //maak aktief
+			eindtijd = mt_min + 5; //5 modeltijd minuten uitvoeren	
+			PRG_hr[pn] = mt_hr + 1;
+			if (PRG_hr[pn] > 24) PRG_hr[pn] = 0;
 
 		}
-		if (mt_min == 10) {
-			led_ev[0] = 0x000000;
-			led_ev[5] = 0x000000;
-			FastLED.show();
-	}
+		else {//actief programma
+			//eerst kijken of het weer moet stoppen
+			if (mt_min > eindtijd) {//stoppen, alles kan het stoppen veroorzaken. in dit program gewoon een 5 tal verlopen modeltijd minuten
+				//alles restten voor de volgende actieve periode
+				//ft = ft/2; //knipper periode in milliseconde
+				f = 0;
+				led_ev[2] = 0x000000; //black leds
+				led_ev[6] = 0x000000;
+				FastLED.show();
+
+				PRG_reg[pn] &= ~(1 << 0); //set non actif
+				//nieuwe starttjd instellen, minuten hoeven hier niet
+
+			}
+			else {
+
+				//*********hier het actieve deel van het programma
+				//in dit voorbeeld geval een knipperlicht.
+				if (millis() - f > ft) {
+					f = millis();
+					PRG_reg[pn] ^= (1 << 7); //gebruik bit 7 van register
+					if (bitRead(PRG_reg[pn], 7) == true) {
+						led_ev[2] = 0xAA0000;
+						led_ev[6] = 0x000000;
+					}
+					else {
+						led_ev[2] = 0x000000;
+						led_ev[6] = 0xAA0000;
+					}
+					FastLED.show();
+				}
+			}
+		} 
+	}//init
 }
+
 
 void loop() {
 	COM_Clk();
