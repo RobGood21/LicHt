@@ -7,9 +7,12 @@
  LicHT is a project for full automated lighting of the model railroad, including day and night cyclus.
  Based on WS2811 adressable led control. 
 
+ In void setup_led is te lezen welke led op welk programma reageert en hoe dit aan te passen. 
 */
 
 #include <FastLED.h>
+#include <eeprom.h>
+
 
 //#define LQ 64 //aantal leds in ledstring
 #define LPdl 8 //pin waar de daglicht ledstring op komt
@@ -23,7 +26,11 @@ CRGB led_dl[64];
 CRGB led_vl[64];
 CRGB led_ev[64];
 
-//Temp declaration during design, debugging
+byte led_dlap[64];//daglicht assign program
+byte led_vlap[64]; //vlap=verlichting assign program
+byte led_evap[64];//evap=event assign program
+
+ //Temp declaration during design, debugging
 
 //Declaraties
 int COM_DCCAdres=64;
@@ -97,8 +104,42 @@ void setup() {
 
 	//program part
 	mt = (tday * 1000) / 24;
-
+	setup_leds();
 	Opening();
+}
+void setup_leds() {
+	/*
+	assigns a program outpu number to a led, default is preprogrammed. 
+	Programs can have multiple outputs
+	Max outputs 254
+	255 is reserved if eeprom read gives 255 led, uses default preset value
+	Define preset value in void led_preset
+	default value can be changed by CV 10 channel 1, 11 channel 2, 12 channel 3, 13 channel 4 
+	Use correct decoder adres and choose correct CV. Value 0-255 defines program output number
+	See CV tabel in manual. 
+	Setting cv value to 255 will set default preprogrammed value.
+	Setting cv 3 of main decoder adres resets to default values.
+	Make administration for the changes, 
+	*/
+	//Programs VL:          program number		program outputs			assigned leds
+	//PRG_traffic			12					1,2						vl0; vl1
+	led_vlap[0] = 1;
+	led_vlap[1] = 2;
+
+	//programs DL
+	//PRG_Flashlight			11						ev2; ev6
+
+	//check EEprom for modyfied entry
+	for (int i = 0; i < 64; i++) {
+		if (EEPROM.read(i) < 0xFF) led_dlap[i] = EEPROM.read(i);
+	}
+	for (int i = 64; i < 128; i++) {
+		if (EEPROM.read(i) < 0xFF) led_vlap[i-64] = EEPROM.read(i);
+	}
+	for (int i = 128; i < 192; i++) {
+		if (EEPROM.read(i) < 0xFF) led_evap[i - 128] = EEPROM.read(i);
+	}
+
 }
 
 void Opening() {
@@ -480,6 +521,10 @@ void COM_ps(int pn) { //ps=program switch
 	case 11:
 		PRG_flashlight(pn);
 		break;
+	case 12:
+		PRG_traffic(pn);
+		break;
+
 	default:
 		//all not defined programs// do nothing
 		break;
@@ -539,18 +584,48 @@ void APP_DL(boolean type, int adres, int decoder, int channel, boolean port, boo
 }
 void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//Verlichting 64leds
+	int dec;
 	if (adres >= VL_adresmin & adres <= VL_adresmax) {
-		if (port == true) {
-			PORTB |= (1 << 5);
-			led_vl[adres - VL_adresmin] = 0x330000; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
+		if (type == false) {//switch
+			if (port == true) {
+				PORTB |= (1 << 5);
+				led_vl[adres - VL_adresmin] = 0xAAAAAA; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
+			}
+			else {
+				PORTB &= ~(1 << 5);
+				led_vl[adres - VL_adresmin] = 0x000000;
+			}
+			FastLED.show();
 		}
-		else {
-			PORTB &= ~(1 << 5);
-			led_vl[adres - VL_adresmin] = 0x000000;
+	}
+	else {//CV
+		dec = 4*(decoder - (COM_DCCAdres)-17); //geeft led volgorde van led op channel 00 van deze (sub)decoder
+		
+		switch (cv) { //adres is altijd hier het adres van de decoder. Niet van het channel
+		case 10:
+			dec = dec + 0;
+			led_vlap[dec] = value;
+			EEPROM.write(adres - dec + 64, value);
+			break;
+		case 11:
+			dec = dec + 1;
+			led_vlap[dec] = value;
+			EEPROM.write(adres - dec + 64, value);
+			break;
+		case 12:
+			dec = dec + 2;
+			led_vlap[dec] = value;
+			EEPROM.write(adres - dec + 64, value);
+			break;
+		case 13:
+			dec = dec + 3;
+			led_vlap[dec] = value;
+			EEPROM.write(adres - dec + 64, value);
+			break;
 		}
-		FastLED.show();
 	}
 }
+
 void APP_EV(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//Events 64leds
 	if (adres >= EV_adresmin & adres <= EV_adresmax) {
@@ -566,8 +641,30 @@ void APP_EV(boolean type, int adres, int decoder, int channel, boolean port, boo
 	}
 }
 
+void LED_set(byte group,byte output, byte r,byte g,byte b) { 
+	//group welke ledstring 0=dl 1=vl 2=ev 
+	//output is output nummer van het programma
+	//color ? eerst alleen even als hex
+	//kleur aanduiding hier keuzes mogelijk maken???? 
+	//sets led value from programs
+	//fastled.show command hier geven?????
 
+	//64 leds in een string kan veel meer zijn toch?
 
+	for (byte i=0; i < 65; i++) { //check all leds in this group
+		switch (group) {
+		case 0:
+			if (led_dlap[i] == output)led_dl[i] = CRGB(r,g,b);
+			break;
+		case 1:
+			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);
+			break;
+		case 2:
+			if (led_evap[i] == output)led_ev[i] = CRGB(r, g, b);
+			break;
+		}
+	}
+}
 void PRG_flashlight(int pn) {//
 	/*
 voorbeeld van een PRG_ in LicHt
@@ -657,6 +754,71 @@ doorloop verkort
 			}
 		} 
 	}//init
+}
+void PRG_traffic(int pn) {
+//verkeerslicht, starts and runs forever...
+	//outputs  1=1 2=2
+	
+
+	static unsigned long tijd;
+	static unsigned int periode=500;
+	static byte fase=0;
+	static byte WieMag;
+	static byte out;
+
+	if (bitRead(PRG_reg[pn], 1) == false) { 
+		PRG_reg[pn] |= (1 << 1); //no init 
+		PRG_reg[pn] |= (1 << 0); //actif
+		//no time needed, always active
+	}
+	else {
+		if (millis() - tijd > periode) {
+			tijd = millis();
+
+			switch (fase) {
+			case 0: //begin
+				fase = 1;
+				WieMag = 1;
+				out = 2;
+				periode = 5000;
+				LED_set(1, 1, 200,0,0);
+				LED_set(1, 2, 200,0,0);
+				break;
+			case 1:
+				periode = 100;
+				fase = 2;
+
+				switch (out) {
+				case 1:					
+					out = 2;
+					break;
+				case 2:
+					out = 1;
+					break;
+				}
+
+			case 2:
+				periode = 12000;
+				LED_set(1, out, 0,200,0);
+				fase = 3;
+				break;
+
+			case 3: //OW oranje
+				periode = 4000;
+				LED_set(1, out, 0,0,150);
+				fase = 4;
+				break;
+			case 4:
+				//all red
+				periode = 5000;
+				LED_set(1, 1, 200,0,0);
+				LED_set(1, 2, 200,0,0);
+				fase = 1;
+				break;
+			}
+			FastLED.show();
+		}
+	}
 }
 
 
