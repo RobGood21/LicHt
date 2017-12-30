@@ -139,7 +139,6 @@ void setup_leds() {
 	for (int i = 128; i < 192; i++) {
 		if (EEPROM.read(i) < 0xFF) led_evap[i - 128] = EEPROM.read(i);
 	}
-
 }
 
 void Opening() {
@@ -461,6 +460,14 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 	n++;
 	if (n > 12)n = 0;
 }
+void COM_resetEEprom(int start) {
+	//resets EEprom to 0xFF from start to start+64
+	//Reloads led assign to predifined values
+	for (int i = start; i < start+64; i++) {
+		if (EEPROM.read(i) < 0xFF)EEPROM.write(i, 0xFF);
+		setup_leds();
+	}
+}
 void COM_exe(boolean type, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//type=CV(true) or switch(false)
 	//decoder basic adres of decoder 
@@ -473,6 +480,7 @@ void COM_exe(boolean type, int decoder, int channel, boolean port, boolean onoff
 	adres = ((decoder - 1) * 4) + channel;
 	//Applications 
 	//APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
+	APP_COM(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_DL(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_EV(type, adres, decoder, channel, port, onoff, cv, value);
@@ -568,6 +576,33 @@ void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port
 	}
 	Serial.println("");
 }
+void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
+	//Basis instellingen van de decoder
+
+	if (decoder==COM_DCCAdres) {
+		if (type == false) { //switch
+
+		}
+		else { //CV
+//Serial.println(decoder);
+			switch (cv) {
+			case 8: //request reset eeprom
+				switch (value) {
+				case 10: //reset EEprom 0-63
+					COM_resetEEprom(0);
+					break;
+				case 20://reset EEprom 64-127
+					COM_resetEEprom(64);
+					break;
+				case 30: //reset EEprom 128-191
+					COM_resetEEprom(128);
+					break;
+				}
+				break;
+			}
+		}
+	}
+}
 void APP_DL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 //Daglicht 64leds
 	if (adres >= DL_adresmin & adres <= DL_adresmax) {
@@ -597,31 +632,32 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 			}
 			FastLED.show();
 		}
-	}
-	else {//CV
-		dec = 4*(decoder - (COM_DCCAdres)-17); //geeft led volgorde van led op channel 00 van deze (sub)decoder
-		
+		else {//CV
+		dec = 4*(decoder - (COM_DCCAdres)-17); //geeft led volgorde van led op channel 00 van deze (sub)decoder		
+		//Serial.println(dec);
 		switch (cv) { //adres is altijd hier het adres van de decoder. Niet van het channel
 		case 10:
 			dec = dec + 0;
 			led_vlap[dec] = value;
-			EEPROM.write(adres - dec + 64, value);
+			EEPROM.write(dec + 64, value);
 			break;
 		case 11:
 			dec = dec + 1;
 			led_vlap[dec] = value;
-			EEPROM.write(adres - dec + 64, value);
+			EEPROM.write(dec + 64, value);
 			break;
 		case 12:
 			dec = dec + 2;
 			led_vlap[dec] = value;
-			EEPROM.write(adres - dec + 64, value);
+			EEPROM.write(dec + 64, value);
 			break;
 		case 13:
 			dec = dec + 3;
 			led_vlap[dec] = value;
-			EEPROM.write(adres - dec + 64, value);
+			EEPROM.write(dec + 64, value);
 			break;
+		}
+
 		}
 	}
 }
@@ -820,8 +856,6 @@ void PRG_traffic(int pn) {
 		}
 	}
 }
-
-
 void loop() {
 	COM_Clk();
 	COM_ProgramAssign();
