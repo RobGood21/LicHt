@@ -22,22 +22,27 @@
 #define tday 15 //tday how long is a modeltimeday in minute 24 is good value lager dan 10 werkt het geheel niet goed
 
 
-CRGB led_dl[64];
-CRGB led_vl[64];
-CRGB led_ev[64];
+CRGB led_dl[240];
+CRGB led_vl[32];
+CRGB led_ev[16];
 
-byte led_dlap[64];//daglicht assign program
-byte led_vlap[64]; //vlap=verlichting assign program
-byte led_evap[64];//evap=event assign program
+//CRGB led_test1(64);
+
+//byte led_dlap[64];//daglicht assign program  niet nodig???
+byte led_vlap[32]; //vlap=verlichting assign program
+byte led_evap[16];//evap=event assign program
 
  //Temp declaration during design, debugging
 
 //Declaraties
 int COM_DCCAdres=64;
 byte COM_reg; //bit0 test PRG active(true)
-byte PRG_reg[64]; //bit0 active(true) bit1=initialised (true) bit7-bit5 exclusive for program
-byte PRG_min[64]; //Time next active minute
-byte PRG_hr[64]; //Time next actice hour
+byte PRG_reg[32]; //bit0 active(true) bit1=initialised (true) bit7-bit5 exclusive for program
+byte PRG_min[32]; //Time next active minute
+byte PRG_hr[32]; //Time next actice hour
+
+
+//**********Bovenstaande tijden... zijn ook in de programmacode op te nemen toch....hier is wat geheugen te winnen ongeveer een 100kb
 
 
 unsigned long Clk;
@@ -83,9 +88,10 @@ void setup() {
 	Clk = millis();
 
 	//Fastled part
-	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, 64); //create strip of 64 leds on pin 8 'Daglicht'
-	FastLED.addLeds<NEOPIXEL, LPvl>(led_vl, 64);//create strip of 64 leds on pin7 'verlichting'
-	FastLED.addLeds<NEOPIXEL, LPev>(led_ev, 64);//create strip of 64 leds on pin6 'Events'
+	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, 240); //create strip of 240 leds on pin 8 'Daglicht'
+
+	FastLED.addLeds<NEOPIXEL, LPvl>(led_vl,32);//create strip of 32leds on pin7 'verlichting'
+	FastLED.addLeds<NEOPIXEL, LPev>(led_ev, 16);//create strip of 16 leds on pin6 'Events'
 	
 	DL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
 	DL_adresmax = DL_adresmin + 63;
@@ -131,7 +137,7 @@ void setup_leds() {
 
 	//check EEprom for modyfied entry
 	for (int i = 0; i < 64; i++) {
-		if (EEPROM.read(i) < 0xFF) led_dlap[i] = EEPROM.read(i);
+		//if (EEPROM.read(i) < 0xFF) led_dlap[i] = EEPROM.read(i);
 	}
 	for (int i = 64; i < 128; i++) {
 		if (EEPROM.read(i) < 0xFF) led_vlap[i-64] = EEPROM.read(i);
@@ -608,7 +614,7 @@ void APP_DL(boolean type, int adres, int decoder, int channel, boolean port, boo
 	if (adres >= DL_adresmin & adres <= DL_adresmax) {
 		if (port == true) {
 			PORTB |= (1 << 4);
-			led_dl[adres-DL_adresmin]= 0x000033; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
+			led_dl[adres-DL_adresmin]= 0xCC2222; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
 		}
 		else {
 			PORTB &= ~(1 << 4);
@@ -667,7 +673,7 @@ void APP_EV(boolean type, int adres, int decoder, int channel, boolean port, boo
 	if (adres >= EV_adresmin & adres <= EV_adresmax) {
 		if (port == true) {
 			PORTB |= (1 << 5);
-			led_ev[adres - EV_adresmin] = 0x003300; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
+			led_ev[adres - EV_adresmin] = 0xFFFFFF; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
 		}
 		else {
 			PORTB &= ~(1 << 5);
@@ -690,7 +696,7 @@ void LED_set(byte group,byte output, byte r,byte g,byte b) {
 	for (byte i=0; i < 65; i++) { //check all leds in this group
 		switch (group) {
 		case 0:
-			if (led_dlap[i] == output)led_dl[i] = CRGB(r,g,b);
+			//if (led_dlap[i] == output)led_dl[i] = CRGB(r,g,b);
 			break;
 		case 1:
 			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);
