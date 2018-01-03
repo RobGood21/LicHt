@@ -19,8 +19,12 @@
 #define LPvl 7 //pin voor verlichting string
 #define LPev 6 //Pin voor events ledstrip
 
-#define tday 15 //tday how long is a modeltimeday in minute 24 is good value lager dan 10 werkt het geheel niet goed
+//variables for matrix daglicht, assignable by CV
+//nu instelling voor demo
+byte led_OW=6; //oost-west aantal leds
+byte led_NZ=8; //noord-zuid aantal leds
 
+#define tday 15 //tday how long is a modeltimeday in minute 24 is good value lager dan 10 werkt het geheel niet goed
 
 CRGB led_dl[240];
 CRGB led_vl[32];
@@ -32,8 +36,6 @@ CRGB led_ev[16];
 byte led_vlap[32]; //vlap=verlichting assign program
 byte led_evap[16];//evap=event assign program
 
- //Temp declaration during design, debugging
-
 //Declaraties
 int COM_DCCAdres=64;
 byte COM_reg; //bit0 test PRG active(true)
@@ -41,14 +43,16 @@ byte PRG_reg[32]; //bit0 active(true) bit1=initialised (true) bit7-bit5 exclusiv
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
 
-
 //**********Bovenstaande tijden... zijn ook in de programmacode op te nemen toch....hier is wat geheugen te winnen ongeveer een 100kb
-
 
 unsigned long Clk;
 unsigned int mt; //modeltime minute
-unsigned int mt_min; //modeltimeclock minutes 
-unsigned int mt_hr; //modeltimeclock hours
+byte mt_min; //modeltimeclock minutes 
+byte mt_hr; //modeltimeclock hours
+
+byte mt_zonop=7; 
+byte mt_zononder=21; 
+
 
 //Zorg dat bij programmeren altijd een BASIS adres wordt genomen. dus 1=(1-4)2=(5-8) 3=(9-12) 4=(13-16) 5 6 enz 
 
@@ -57,16 +61,13 @@ unsigned int mt_hr; //modeltimeclock hours
 //EV (events) decoder 16adresses higher
 
 int DL_adresmin;
-int DL_adresmax;
 int VL_adresmin;
-int VL_adresmax;
 int EV_adresmin;
-int EV_adresmax;
 
 
 volatile unsigned long DEK_Tperiode; //laatst gemeten tijd 
 volatile unsigned int DEK_duur; //gemeten duur van periode tussen twee interupts
-boolean DEK_Monitor = false; //shows DCC commands as bytes
+boolean DEK_Monitor = false; //shows DCC monitor in serial monitor. NOTE: true will take up to 400bytes of memory, program can run out of memory and crash.
 byte DEK_Reg; //register voor de decoder 
 byte DEK_Status = 0;
 byte DEK_byteRX[6]; //max length commandoos for this decoder 6 bytes (5x data 1x error check)
@@ -88,17 +89,14 @@ void setup() {
 	Clk = millis();
 
 	//Fastled part
-	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, 240); //create strip of 240 leds on pin 8 'Daglicht'
+	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, led_OW*led_NZ); //create strip of Xx leds on pin 8 'Daglicht'
 
 	FastLED.addLeds<NEOPIXEL, LPvl>(led_vl,32);//create strip of 32leds on pin7 'verlichting'
 	FastLED.addLeds<NEOPIXEL, LPev>(led_ev, 16);//create strip of 16 leds on pin6 'Events'
 	
 	DL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
-	DL_adresmax = DL_adresmin + 63;
-	VL_adresmin = DL_adresmax + 1;
-	VL_adresmax = VL_adresmin + 63;
-	EV_adresmin = VL_adresmax + 1;
-	EV_adresmax = EV_adresmin + 63;
+	VL_adresmin = DL_adresmin + 64;
+	EV_adresmin = VL_adresmin + 64;
 	
 
 	//DeKoder part, interrupt on PIN2
@@ -111,7 +109,7 @@ void setup() {
 	//program part
 	mt = (tday * 1000) / 24;
 	setup_leds();
-	Opening();
+	if (DEK_Monitor==true) Opening();
 }
 void setup_leds() {
 	/*
@@ -127,6 +125,13 @@ void setup_leds() {
 	Setting cv 3 of main decoder adres resets to default values.
 	Make administration for the changes, 
 	*/
+	//Daglicht...
+	//gebruikte leds instellen, straks ook met CV in te stellen
+
+
+
+
+
 	//Programs VL:          program number		program outputs			assigned leds
 	//PRG_traffic			12					1,2						vl0; vl1
 	led_vlap[0] = 1;
@@ -147,7 +152,8 @@ void setup_leds() {
 	}
 }
 
-void Opening() {
+void Opening() {	
+	
 	Serial.println("");
 	Serial.println("");
 	Serial.println("Welkom bij LicHT");
@@ -164,15 +170,15 @@ void Opening() {
 	Serial.print("adressen daglicht leds van ");
 	Serial.print(DL_adresmin);
 	Serial.print(" tot en met ");
-	Serial.println(DL_adresmax);
+	Serial.println(DL_adresmin+63);
 	Serial.print("adressen verlichting leds van ");
 	Serial.print(VL_adresmin);
 	Serial.print(" tot en met ");
-	Serial.println(VL_adresmax);
+	Serial.println(VL_adresmin+63);
 	Serial.print("adressen gebeurtenissen leds van ");
 	Serial.print(EV_adresmin);
 	Serial.print(" tot en met ");
-	Serial.println(EV_adresmax);
+	Serial.println(EV_adresmin+63);
 	Serial.println("");
 	Serial.print("Dag, 24uur in modeltijd duurt ");
 	Serial.print(tday);
@@ -369,92 +375,8 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 		}
 		COM_exe(bitRead(DEK_BufReg[n], 0), decoder, channel, port, onoff, cv, value);
 
-
-		//Show Monitor (bytes)
-		if (DEK_Monitor == true) {
-			Serial.print("buffer= ");
-			Serial.print(n);
-			Serial.print("  value:  ");
-			Serial.print(bitRead(DEK_BufReg[n], 7));
-			Serial.print(bitRead(DEK_BufReg[n], 6));
-			Serial.print(bitRead(DEK_BufReg[n], 5));
-			Serial.print(bitRead(DEK_BufReg[n], 4));
-			Serial.print(bitRead(DEK_BufReg[n], 3));
-			Serial.print(bitRead(DEK_BufReg[n], 2));
-			Serial.print(bitRead(DEK_BufReg[n], 1));
-			Serial.print(bitRead(DEK_BufReg[n], 0));
-			Serial.println("");
-
-			temp = DEK_Buf0[n];
-			Serial.print(bitRead(temp, 7));
-			Serial.print(bitRead(temp, 6));
-			Serial.print(bitRead(temp, 5));
-			Serial.print(bitRead(temp, 4));
-			Serial.print(bitRead(temp, 3));
-			Serial.print(bitRead(temp, 2));
-			Serial.print(bitRead(temp, 1));
-			Serial.print(bitRead(temp, 0));
-			Serial.println("");
-
-			temp = DEK_Buf1[n];
-			Serial.print(bitRead(temp, 7));
-			Serial.print(bitRead(temp, 6));
-			Serial.print(bitRead(temp, 5));
-			Serial.print(bitRead(temp, 4));
-			Serial.print(bitRead(temp, 3));
-			Serial.print(bitRead(temp, 2));
-			Serial.print(bitRead(temp, 1));
-			Serial.print(bitRead(temp, 0));
-			Serial.println("");
-
-			temp = DEK_Buf2[n];
-			Serial.print(bitRead(temp, 7));
-			Serial.print(bitRead(temp, 6));
-			Serial.print(bitRead(temp, 5));
-			Serial.print(bitRead(temp, 4));
-			Serial.print(bitRead(temp, 3));
-			Serial.print(bitRead(temp, 2));
-			Serial.print(bitRead(temp, 1));
-			Serial.print(bitRead(temp, 0));
-			Serial.println("");
-
-			temp = DEK_Buf3[n];
-			Serial.print(bitRead(temp, 7));
-			Serial.print(bitRead(temp, 6));
-			Serial.print(bitRead(temp, 5));
-			Serial.print(bitRead(temp, 4));
-			Serial.print(bitRead(temp, 3));
-			Serial.print(bitRead(temp, 2));
-			Serial.print(bitRead(temp, 1));
-			Serial.print(bitRead(temp, 0));
-			Serial.println("");
-
-			temp = DEK_Buf4[n];
-			Serial.print(bitRead(temp, 7));
-			Serial.print(bitRead(temp, 6));
-			Serial.print(bitRead(temp, 5));
-			Serial.print(bitRead(temp, 4));
-			Serial.print(bitRead(temp, 3));
-			Serial.print(bitRead(temp, 2));
-			Serial.print(bitRead(temp, 1));
-			Serial.print(bitRead(temp, 0));
-			Serial.println("");
-
-
-			temp = DEK_Buf5[n];
-			Serial.print(bitRead(temp, 7));
-			Serial.print(bitRead(temp, 6));
-			Serial.print(bitRead(temp, 5));
-			Serial.print(bitRead(temp, 4));
-			Serial.print(bitRead(temp, 3));
-			Serial.print(bitRead(temp, 2));
-			Serial.print(bitRead(temp, 1));
-			Serial.print(bitRead(temp, 0));
-			Serial.println("");
-			Serial.println("------");
-
-		}
 		//clear buffer
+	
 		DEK_BufReg[n] = 0;
 		DEK_Buf0[n] = 0;
 		DEK_Buf1[n] = 0;
@@ -485,7 +407,7 @@ void COM_exe(boolean type, int decoder, int channel, boolean port, boolean onoff
 	int adres;
 	adres = ((decoder - 1) * 4) + channel;
 	//Applications 
-	//APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
+	if (DEK_Monitor==true) APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_COM(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_DL(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
@@ -511,6 +433,16 @@ void COM_Clk() {
 void COM_ProgramAssign() {
 	//plays, assigns programs only 1 every cycle 
 	//first 64 active programs 1by1 then only 1 not active programs, then 64 active and so on. 
+	
+	//after start all programs must be passed once
+	static byte init = 0;
+	if (init == false) {
+		for (byte i = 0; i < 64; i ++ ) {
+			COM_ps(i);
+		}
+		init = true;
+	}
+	
 	static unsigned pa; //program active
 	static unsigned pna;//program not active
 	if (bitRead(COM_reg, 0) == true) { //find active program
@@ -532,6 +464,9 @@ void COM_ps(int pn) { //ps=program switch
 	//total, max 64 programs
 	//1-10 daylight and weather 11/30 lighting houses and streetlights  31 > no idea yet
 	switch (pn) {
+	case 1:
+		PRG_Daglicht(pn);
+		break;
 	case 11:
 		PRG_flashlight(pn);
 		break;
@@ -611,7 +546,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 }
 void APP_DL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 //Daglicht 64leds
-	if (adres >= DL_adresmin & adres <= DL_adresmax) {
+	if (adres >= DL_adresmin & adres <= DL_adresmin+63) {
 		if (port == true) {
 			PORTB |= (1 << 4);
 			led_dl[adres-DL_adresmin]= 0xCC2222; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
@@ -625,8 +560,10 @@ void APP_DL(boolean type, int adres, int decoder, int channel, boolean port, boo
 }
 void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//Verlichting 64leds
+
+	//******AANTALLEN en adressen aanpassen straks....
 	int dec;
-	if (adres >= VL_adresmin & adres <= VL_adresmax) {
+	if (adres >= VL_adresmin & adres <= VL_adresmin+63) {
 		if (type == false) {//switch
 			if (port == true) {
 				PORTB |= (1 << 5);
@@ -670,7 +607,9 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 
 void APP_EV(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//Events 64leds
-	if (adres >= EV_adresmin & adres <= EV_adresmax) {
+	//******AANTALLEN en adressen aanpassen straks....
+
+	if (adres >= EV_adresmin & adres <= EV_adresmin+63) {
 		if (port == true) {
 			PORTB |= (1 << 5);
 			led_ev[adres - EV_adresmin] = 0xFFFFFF; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
@@ -690,20 +629,58 @@ void LED_set(byte group,byte output, byte r,byte g,byte b) {
 	//kleur aanduiding hier keuzes mogelijk maken???? 
 	//sets led value from programs
 	//fastled.show command hier geven?????
-
 	//64 leds in een string kan veel meer zijn toch?
-
-	for (byte i=0; i < 65; i++) { //check all leds in this group
-		switch (group) {
-		case 0:
-			//if (led_dlap[i] == output)led_dl[i] = CRGB(r,g,b);
-			break;
-		case 1:
+	switch (group) {
+	case 0:
+		led_dl[output] = CRGB(r, g, b);
+		break;
+	case 1:
+		for (byte i = 0; i < 65; i++) { //check all leds in this group
 			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);
-			break;
-		case 2:
-			if (led_evap[i] == output)led_ev[i] = CRGB(r, g, b);
-			break;
+		}
+		break;
+	case 2:
+		break;
+	}
+	FastLED.show();
+	//if (led_dlap[i] == output)led_dl[i] = CRGB(r,g,b);
+	//if (led_evap[i] == output)led_ev[i] = CRGB(r, g, b);	
+}
+void PRG_Daglicht(int pn) {
+	//FastLED.setBrightness(100);
+	
+	//controls the daylight ledstrips.
+	static byte led = 0;
+	static unsigned long tijd;
+	static int heatIndex=10;
+
+	if (bitRead(PRG_reg[pn], 1) == false) { 
+		//modeltijd instellen op ochtend, zonsopgang
+		mt_hr = mt_zonop;
+		PRG_reg[pn] |= (1 << 1); //starts program
+		PRG_reg[pn] |= (1 << 0); //program active
+		
+	}
+	else {
+		//timer every 10 ms
+		if(millis()-tijd > 10){
+			tijd = millis();
+		//**************start program loop
+
+			heatIndex ++;
+			if (heatIndex > 255)heatIndex = 0;
+
+			CRGB color = ColorFromPalette(HeatColors_p, heatIndex);
+			led_dl[led] = color;
+
+			//fill_solid(led_dl, led_NZ*led_OW, color);
+						
+			//LED_set(0, led, 20, 00, 00);
+			//LED_set(0, led - 1, 0, 0, 0);
+		led++; //volgende doorloop volgende led
+		if (led > (led_NZ*led_OW))led = 0;
+		FastLED.show();
+		//*************end program loop
 		}
 	}
 }
@@ -800,8 +777,6 @@ doorloop verkort
 void PRG_traffic(int pn) {
 //verkeerslicht, starts and runs forever...
 	//outputs  1=1 2=2
-	
-
 	static unsigned long tijd;
 	static unsigned int periode=500;
 	static byte fase=0;
@@ -858,7 +833,7 @@ void PRG_traffic(int pn) {
 				fase = 1;
 				break;
 			}
-			FastLED.show();
+			//FastLED.show();
 		}
 	}
 }
