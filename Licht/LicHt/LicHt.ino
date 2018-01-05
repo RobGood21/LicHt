@@ -19,6 +19,19 @@
 #define LPvl 7 //pin voor verlichting string
 #define LPev 6 //Pin voor events ledstrip
 
+
+/*
+
+DEFINE_GRADIENT_PALETTE(Sunrise_gp) {
+	0, 0, 0, 0,   //black
+		30, 30, 0, 0,  
+		120, 200, 200, 50,   //bright yellow
+		255,225,200,200, //last timing in palette must be 255
+}; //full white
+
+CRGBPalette256 sun = Sunrise_gp;
+*/
+
 //variables for matrix daglicht, assignable by CV
 //nu instelling voor demo
 byte led_OW=6; //oost-west aantal leds
@@ -630,6 +643,7 @@ void LED_set(byte group,byte output, byte r,byte g,byte b) {
 	//sets led value from programs
 	//fastled.show command hier geven?????
 	//64 leds in een string kan veel meer zijn toch?
+
 	switch (group) {
 	case 0:
 		led_dl[output] = CRGB(r, g, b);
@@ -643,17 +657,21 @@ void LED_set(byte group,byte output, byte r,byte g,byte b) {
 		break;
 	}
 	FastLED.show();
-	//if (led_dlap[i] == output)led_dl[i] = CRGB(r,g,b);
-	//if (led_evap[i] == output)led_ev[i] = CRGB(r, g, b);	
+
 }
 void PRG_Daglicht(int pn) {
-	//FastLED.setBrightness(100);
-	
+	//FastLED.setBrightness(100);	
 	//controls the daylight ledstrips.
 	static byte led = 0;
-	static unsigned long tijd;
-	static int heatIndex=10;
+	static byte nz = 0;
+	static byte ow = 0;
+	static unsigned long tijdcolor;
+	static unsigned long tijdled;
+	static int heatIndex=0;
 
+	static byte filternz = 4;  //verhouding getal 1-10
+	static byte filterow = 4;
+	
 	if (bitRead(PRG_reg[pn], 1) == false) { 
 		//modeltijd instellen op ochtend, zonsopgang
 		mt_hr = mt_zonop;
@@ -662,28 +680,48 @@ void PRG_Daglicht(int pn) {
 		
 	}
 	else {
-		//timer every 10 ms
-		if(millis()-tijd > 10){
-			tijd = millis();
-		//**************start program loop
-
-			heatIndex ++;
-			if (heatIndex > 255)heatIndex = 0;
-
-			CRGB color = ColorFromPalette(HeatColors_p, heatIndex);
-			led_dl[led] = color;
-
-			//fill_solid(led_dl, led_NZ*led_OW, color);
-						
-			//LED_set(0, led, 20, 00, 00);
-			//LED_set(0, led - 1, 0, 0, 0);
-		led++; //volgende doorloop volgende led
-		if (led > (led_NZ*led_OW))led = 0;
-		FastLED.show();
-		//*************end program loop
+		//timer every 10 ms timercolor
+		if (millis() - tijdcolor > 1000) {
+			tijdcolor = millis();
+			//**************start program loop			
+			if (heatIndex < 250)heatIndex++;
 		}
+		if (millis() - tijdled >100) {
+			tijdled = millis();
+
+			//blackout
+			//for (int i = 0; i < 48; i++) {
+				//led_dl[i] = 0x000000; 
+			//}
+			//filteren van de te bewerken leds
+			
+			//if (nz>1 & nz<6 & ow > 2 & ow < 5)led_dl[(ow*led_NZ)+nz] = 0x0A0000;
+			
+			//of in percentages van de ow en nz .
+			//waarde van 1 tot 10 
+			//filternz, filterow dus getal van 1 tot 10
+			//onderstaand maakt het mogelijk een vlek of positie in de hemel aan te wijzen, bv 5-8 
+
+			if (nz > ((filternz*led_NZ) / 10)-1 & (nz < ((filternz* led_NZ) / 10) + 3) & (ow > ((filterow*led_OW) / 10) -1 & (ow < ((filterow * led_OW) / 10) + 3))) {
+				led_dl[(ow*led_NZ) + nz] = ColorFromPalette(HeatColors_p, heatIndex);//0x0A0000;
+			}
+			//volgorde van de leds 
+			//tellen in nz (kolommen) en ow (rijen)				
+			nz++;
+			if (nz == led_NZ) {
+				nz = 0;
+				ow++;
+				if (ow == led_OW)ow = 0;
+			}
+			//if (led > led_NZ*led_OW-1) led = 0;
+			//PRG_reg[pn] &=~(1<<0); //set program inactive			
+			//set tim for next active period 
+		FastLED.show();
+		}
+
 	}
 }
+
 void PRG_flashlight(int pn) {//
 	/*
 voorbeeld van een PRG_ in LicHt
@@ -777,6 +815,8 @@ doorloop verkort
 void PRG_traffic(int pn) {
 //verkeerslicht, starts and runs forever...
 	//outputs  1=1 2=2
+
+	
 	static unsigned long tijd;
 	static unsigned int periode=500;
 	static byte fase=0;
@@ -790,6 +830,7 @@ void PRG_traffic(int pn) {
 	}
 	else {
 		if (millis() - tijd > periode) {
+
 			tijd = millis();
 
 			switch (fase) {
