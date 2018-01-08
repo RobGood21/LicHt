@@ -19,18 +19,7 @@
 #define LPvl 7 //pin voor verlichting string
 #define LPev 6 //Pin voor events ledstrip
 
-
-/*
-
-DEFINE_GRADIENT_PALETTE(Sunrise_gp) {
-	0, 0, 0, 0,   //black
-		30, 30, 0, 0,  
-		120, 200, 200, 50,   //bright yellow
-		255,225,200,200, //last timing in palette must be 255
-}; //full white
-
-CRGBPalette256 sun = Sunrise_gp;
-*/
+#define ledtype WS2812
 
 //variables for matrix daglicht, assignable by CV
 //nu instelling voor demo
@@ -49,14 +38,21 @@ CRGB led_ev[16];
 byte led_vlap[32]; //vlap=verlichting assign program
 byte led_evap[16];//evap=event assign program
 
+byte led_clr[3]; //holds a color
+
+
 //Declaraties
 int COM_DCCAdres=64;
-byte COM_reg; //bit0 test PRG active(true)
-byte PRG_reg[32]; //bit0 active(true) bit1=initialised (true) bit7-bit5 exclusive for program
+byte COM_reg; 
+//bit0 test PRG active(true)
+//bit1 ledstrips direction N>Z>N>Z>N>Z>N enz (true) or N>Z N>Z N>Z N>Z enz (false, standard)
+byte PRG_reg[32]; 
+//bit0 active(true) 
+//bit1=initialised (true) 
+//bit7-bit5 exclusive for program
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
 
-//**********Bovenstaande tijden... zijn ook in de programmacode op te nemen toch....hier is wat geheugen te winnen ongeveer een 100kb
 
 unsigned long Clk;
 unsigned int mt; //modeltime minute
@@ -94,7 +90,9 @@ byte DEK_Buf3[12];
 byte DEK_Buf4[12];
 byte DEK_Buf5[12];
 
+
 void setup() {
+
 	Serial.begin(9600);
 	//test mode
 	DDRB |= (1 << 5);	//pin13
@@ -102,10 +100,13 @@ void setup() {
 	Clk = millis();
 
 	//Fastled part
-	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, led_OW*led_NZ); //create strip of Xx leds on pin 8 'Daglicht'
+	//eerste regel mee gespeeld veel opties die ik nog niet begriijp
+	//FastLED.addLeds<ledtype, LPdl,GRB> (led_dl, led_OW*led_NZ).setCorrection(TypicalLEDStrip); //create strip of
 
+	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, 240);//create strip of 32leds on pin7 'verlichting' Xx leds on pin 8 'Daglicht'
 	FastLED.addLeds<NEOPIXEL, LPvl>(led_vl,32);//create strip of 32leds on pin7 'verlichting'
 	FastLED.addLeds<NEOPIXEL, LPev>(led_ev, 16);//create strip of 16 leds on pin6 'Events'
+	
 	
 	DL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
 	VL_adresmin = DL_adresmin + 64;
@@ -120,6 +121,10 @@ void setup() {
 	EIMSK |= (1 << INT0);//bitSet(EIMSK, INT0);//EIMSK – External Interrupt Mask Register bit0 INT0 > 1
 
 	//program part
+	//Set register 
+	//COM_reg &= ~(1 << 1); //clear bit1, separate ledstrips of layout width.
+	COM_reg |= (1 << 1); //set bit 1 ledstrip as 1 pcs folded over the layout.
+
 	mt = (tday * 1000) / 24;
 	setup_leds();
 	if (DEK_Monitor==true) Opening();
@@ -468,6 +473,7 @@ void COM_ProgramAssign() {
 	}
 	else { //find not-active program
 		if ((PRG_hr[pna] == mt_hr)& (PRG_min[pna] == mt_min))COM_ps(pna);
+		//if ((PRG_hr[pna] == mt_hr))COM_ps(pna);
 		COM_reg |= (1 << 0); //next cycle active
 		pna++;
 		if (pna > 64)pna = 0;
@@ -650,75 +656,151 @@ void LED_set(byte group,byte output, byte r,byte g,byte b) {
 		break;
 	case 1:
 		for (byte i = 0; i < 65; i++) { //check all leds in this group
-			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);
+			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);			
 		}
+FastLED.show();
 		break;
 	case 2:
 		break;
 	}
-	FastLED.show();
+	
 
+}
+byte LED_color(byte startkleur,byte eindkleur,byte aantalstappen,byte stap) {
+	//berekend een kleur.
+	byte clr;
+	
+	clr = ((eindkleur - startkleur)*stap / aantalstappen);
+	clr = clr+startkleur;
+	return clr;
 }
 void PRG_Daglicht(int pn) {
 	//FastLED.setBrightness(100);	
 	//controls the daylight ledstrips.
-	static byte led = 0;
-	static byte nz = 0;
-	static byte ow = 0;
-	static unsigned long tijdcolor;
-	static unsigned long tijdled;
-	static int heatIndex=0;
+	//bit4 Kleur instellen (false) leds instellen (true)
+	//bit5 of prg_reg toggle for direction of led assign.
+	//bit6 select event(true) cycle(false)
 
+	static byte count;
+
+	static byte led = 0;
+	static byte clr[3];
+	static byte clr_gradient[6]; //[0]aantal stappen,[1]begin rood, [2]eind rood , [3]begin groen, [4]eind groen, [5]begin blauw, [6]end blauw
+
+	static byte nz = 0;
+	byte nzled;
+	static byte ow = 0;
+	static unsigned long tijdled;
+	static unsigned long kleurtijd;
+	static byte event ; //what event? Sunrise sunset, clouds, rain, lightning etc
+	static byte nextdayevent = 0; //to follow the dayevent
+
+	//nog niet definitief
 	static byte filternz = 4;  //verhouding getal 1-10
 	static byte filterow = 4;
 	
-	if (bitRead(PRG_reg[pn], 1) == false) { 
+	if (bitRead(PRG_reg[pn], 1) == false) { //1e doorloop na power-up
 		//modeltijd instellen op ochtend, zonsopgang
 		mt_hr = mt_zonop;
+		mt_min = 0;
+
 		PRG_reg[pn] |= (1 << 1); //starts program
-		PRG_reg[pn] |= (1 << 0); //program active
-		
+		PRG_hr[pn] = mt_hr; //set time for program to become active
+		PRG_min[pn] = mt_min;		
 	}
-	else {
-		//timer every 10 ms timercolor
-		if (millis() - tijdcolor > 1000) {
-			tijdcolor = millis();
-			//**************start program loop			
-			if (heatIndex < 250)heatIndex++;
-		}
-		if (millis() - tijdled >100) {
-			tijdled = millis();
-
-			//blackout
-			//for (int i = 0; i < 48; i++) {
-				//led_dl[i] = 0x000000; 
-			//}
-			//filteren van de te bewerken leds
-			
-			//if (nz>1 & nz<6 & ow > 2 & ow < 5)led_dl[(ow*led_NZ)+nz] = 0x0A0000;
-			
-			//of in percentages van de ow en nz .
-			//waarde van 1 tot 10 
-			//filternz, filterow dus getal van 1 tot 10
-			//onderstaand maakt het mogelijk een vlek of positie in de hemel aan te wijzen, bv 5-8 
-
-			if (nz > ((filternz*led_NZ) / 10)-1 & (nz < ((filternz* led_NZ) / 10) + 3) & (ow > ((filterow*led_OW) / 10) -1 & (ow < ((filterow * led_OW) / 10) + 3))) {
-				led_dl[(ow*led_NZ) + nz] = ColorFromPalette(HeatColors_p, heatIndex);//0x0A0000;
-			}
-			//volgorde van de leds 
-			//tellen in nz (kolommen) en ow (rijen)				
-			nz++;
-			if (nz == led_NZ) {
-				nz = 0;
-				ow++;
-				if (ow == led_OW)ow = 0;
-			}
-			//if (led > led_NZ*led_OW-1) led = 0;
-			//PRG_reg[pn] &=~(1<<0); //set program inactive			
-			//set tim for next active period 
-		FastLED.show();
+	else { //Normale doorloop
+		//is program active? if not  called because of mt modeltime// else program in progress
+		
+		if (bitRead(PRG_reg[pn], 0)== false) { //program not actieve	
+			PRG_reg[pn] |= (1 << 0); //program active
+			PRG_reg[pn] |= (1 << 6);
 		}
 
+		else { //program is active
+			if (bitRead(PRG_reg[pn], 6) == true) { //new event
+				PRG_reg[pn] ^= (1 << 6);
+				switch (event) {
+				case 0: //sunrise start, fase 0
+					//Serial.println("sunrise fase 1");
+					//PRG_reg[pn] &=~(1 << 6); //verhoog lichtsterkte
+					clr_gradient[0] = 20; //aantal stappen om eindwaarde te bereiken
+					clr_gradient[1] = 1; //begin waarde rood
+					clr_gradient[2] = 30; //eindwaarde rood				
+					clr_gradient[3] = 0; //beginwaarde groen
+					clr_gradient[4] = 1;//eindwaarde groen
+					clr_gradient[5] = 0;//beginwaarde blauw
+					clr_gradient[6] = 1; //einde waarde blauw
+
+					event = 1;					
+					break;
+				case 1: //sunset 
+					//Serial.println("sunrise fase 2");
+					clr_gradient[0] = 100; //aantal stappen om eindwaarde te bereiken
+					clr_gradient[1] = 30;//led_dl[0].r;// clr_temp[0]; //begin waarde rood
+					clr_gradient[2] = 30; //eindwaarde rood				
+					clr_gradient[3] = 1;// led_dl[0].g; //beginwaarde groen
+					clr_gradient[4] = 1;//eindwaarde groen
+					clr_gradient[5] = 1;// led_dl[0].b;//clr_temp[2];//beginwaarde blauw
+					clr_gradient[6] = 200; //einde waarde blauw
+
+					event = 2;
+					break;
+				case 2:
+					//doet niks alleen weer terug naar begin
+					//Serial.println("fase3");
+					event = 0;
+					PRG_reg[pn] ^= (1 << 6);
+					break;
+				}
+			}
+			else {
+			//kleuren instellen
+			switch (bitRead(PRG_reg[pn], 4)) {
+			case false:
+			if (millis() - kleurtijd >500) {
+				kleurtijd = millis();
+				count++;
+
+				if (count > clr_gradient[0]) { //einde cyclus bereikt, programma inaktief
+					count = 0;
+					PRG_reg[pn] ^= (1 << 6); //next cycle new event
+					//tijd instellen voor volgende cylus
+					//PRG_min[pn] = mt_min + 10;
+					//PRG_hr[pn] = mt_hr;
+					//pas op met de uren hier...
+					//PRG_reg[pn] &= ~(1 << 0); //program inactief
+					}
+
+				clr[0] =LED_color(clr_gradient[1], clr_gradient[2], clr_gradient[0], count);
+				clr[1]= LED_color(clr_gradient[3], clr_gradient[4], clr_gradient[0], count);
+				clr[2]= LED_color(clr_gradient[5], clr_gradient[6], clr_gradient[0], count);
+
+				PRG_reg[pn] ^= (1 << 4);
+			}
+			break;
+
+			case true:
+			//needed for strip sequence
+				nzled = nz;
+				if (bitRead(COM_reg, 1) == true & bitRead(PRG_reg[pn],5)==true) nzled = 7 - nz;		
+				led = (ow*led_NZ) + nzled;
+				LED_set(0, led, clr[0],clr[1],clr[2]);
+				nz++;		
+
+				if (nz == led_NZ) {
+					nz = 0;
+					PRG_reg[pn] ^= (1 <<5); //toggle bit 5 change direction of leds in next row if needed.
+					ow++;
+					FastLED.show();
+					if (ow == led_OW) {
+						ow = 0;
+						PRG_reg[pn] ^= (1 << 4);
+					}
+				}
+				break;
+			}
+			}
+		}
 	}
 }
 
