@@ -92,7 +92,7 @@ byte DEK_Buf5[12];
 
 
 void setup() {
-
+	delay(350);
 	Serial.begin(9600);
 	//test mode
 	DDRB |= (1 << 5);	//pin13
@@ -663,145 +663,168 @@ FastLED.show();
 	case 2:
 		break;
 	}
-	
-
 }
 byte LED_color(byte startkleur,byte eindkleur,byte aantalstappen,byte stap) {
 	//berekend een kleur.
-	byte clr;
-	
-	clr = ((eindkleur - startkleur)*stap / aantalstappen);
-	clr = clr+startkleur;
-	return clr;
+	int newclr;	
+	newclr=(eindkleur-startkleur)*stap/aantalstappen;
+	newclr = newclr + startkleur;
+	return newclr;
 }
+
 void PRG_Daglicht(int pn) {
 	//FastLED.setBrightness(100);	
 	//controls the daylight ledstrips.
-	//bit4 Kleur instellen (false) leds instellen (true)
-	//bit5 of prg_reg toggle for direction of led assign.
-	//bit6 select event(true) cycle(false)
+	//bits of prg_reg bit5 =alternate Oostwest row
 
-	static byte count;
-
+	static byte fase = 0; //bepaald welke doorloop
+	static byte t;
 	static byte led = 0;
 	static byte clr[3];
-	static byte clr_gradient[6]; //[0]aantal stappen,[1]begin rood, [2]eind rood , [3]begin groen, [4]eind groen, [5]begin blauw, [6]end blauw
+	static byte clr_gradient[7]; //[0]aantal stappen,[1]begin rood, [2]eind rood , [3]begin groen, [4]eind groen, [5]begin blauw, [6]end blauw
 
 	static byte nz = 0;
 	byte nzled;
 	static byte ow = 0;
 	static unsigned long tijdled;
-	static unsigned long kleurtijd;
-	static byte event ; //what event? Sunrise sunset, clouds, rain, lightning etc
+	static unsigned long kleurtijd=0;
+	static byte event=0; //what event? Sunrise sunset, clouds, rain, lightning etc
 	static byte nextdayevent = 0; //to follow the dayevent
 
 	//nog niet definitief
 	static byte filternz = 4;  //verhouding getal 1-10
 	static byte filterow = 4;
-	
-	if (bitRead(PRG_reg[pn], 1) == false) { //1e doorloop na power-up
-		//modeltijd instellen op ochtend, zonsopgang
+	static byte OWkans;
+
+	switch (fase) {
+	case 0: //after power-up, starts program and sets time to wake-up
+		Serial.println(fase);
 		mt_hr = mt_zonop;
 		mt_min = 0;
-
 		PRG_reg[pn] |= (1 << 1); //starts program
 		PRG_hr[pn] = mt_hr; //set time for program to become active
-		PRG_min[pn] = mt_min;		
-	}
-	else { //Normale doorloop
-		//is program active? if not  called because of mt modeltime// else program in progress
-		
-		if (bitRead(PRG_reg[pn], 0)== false) { //program not actieve	
-			PRG_reg[pn] |= (1 << 0); //program active
-			PRG_reg[pn] |= (1 << 6);
-		}
+		PRG_min[pn] = mt_min;
+		fase = 1;
+		break;
+	case 1: //called from wake-up  time
+		Serial.println(fase);
+		PRG_reg[pn] |= (1 << 0); //program active
+		PRG_reg[pn] |= (1 << 6);
+		fase = 10;
+		break;
 
-		else { //program is active
-			if (bitRead(PRG_reg[pn], 6) == true) { //new event
-				PRG_reg[pn] ^= (1 << 6);
-				switch (event) {
-				case 0: //sunrise start, fase 0
-					//Serial.println("sunrise fase 1");
-					//PRG_reg[pn] &=~(1 << 6); //verhoog lichtsterkte
-					clr_gradient[0] = 20; //aantal stappen om eindwaarde te bereiken
-					clr_gradient[1] = 1; //begin waarde rood
-					clr_gradient[2] = 30; //eindwaarde rood				
-					clr_gradient[3] = 0; //beginwaarde groen
-					clr_gradient[4] = 1;//eindwaarde groen
-					clr_gradient[5] = 0;//beginwaarde blauw
-					clr_gradient[6] = 1; //einde waarde blauw
 
-					event = 1;					
-					break;
-				case 1: //sunset 
-					//Serial.println("sunrise fase 2");
-					clr_gradient[0] = 100; //aantal stappen om eindwaarde te bereiken
-					clr_gradient[1] = 30;//led_dl[0].r;// clr_temp[0]; //begin waarde rood
-					clr_gradient[2] = 30; //eindwaarde rood				
-					clr_gradient[3] = 1;// led_dl[0].g; //beginwaarde groen
-					clr_gradient[4] = 1;//eindwaarde groen
-					clr_gradient[5] = 1;// led_dl[0].b;//clr_temp[2];//beginwaarde blauw
-					clr_gradient[6] = 200; //einde waarde blauw
+	case 5: //load new color
 
-					event = 2;
-					break;
-				case 2:
-					//doet niks alleen weer terug naar begin
-					//Serial.println("fase3");
-					event = 0;
-					PRG_reg[pn] ^= (1 << 6);
-					break;
-				}
+		if (millis() - kleurtijd > 200) {
+
+		//Serial.print("Fase: ");
+		//Serial.println(fase);
+
+			kleurtijd = millis();
+			t++;		
+			
+			//kleur = LED_color(clr_gradient[1], clr_gradient[2], clr_gradient[0], t);
+
+
+			clr[0] =LED_color(clr_gradient[1], clr_gradient[2], clr_gradient[0], t);
+			clr[1] =LED_color(clr_gradient[3], clr_gradient[4], clr_gradient[0], t);
+			clr[2] =LED_color(clr_gradient[5], clr_gradient[6], clr_gradient[0], t);
+			
+
+
+			//Serial.print("kleur: ");Serial.println(kleur);
+			//Serial.println(LED_color(clr_gradient[1], clr_gradient[2], clr_gradient[0], t));
+
+			if (t > clr_gradient[0]) { //einde cyclus bereikt, programma inaktief
+				//Serial.print("Aantal gemaakte stappen");
+				//Serial.println(clr_gradient[0]);
+				t = 0;
+				fase = 10;
 			}
 			else {
-			//kleuren instellen
-			switch (bitRead(PRG_reg[pn], 4)) {
-			case false:
-			if (millis() - kleurtijd >500) {
-				kleurtijd = millis();
-				count++;
-
-				if (count > clr_gradient[0]) { //einde cyclus bereikt, programma inaktief
-					count = 0;
-					PRG_reg[pn] ^= (1 << 6); //next cycle new event
-					//tijd instellen voor volgende cylus
-					//PRG_min[pn] = mt_min + 10;
-					//PRG_hr[pn] = mt_hr;
-					//pas op met de uren hier...
-					//PRG_reg[pn] &= ~(1 << 0); //program inactief
-					}
-
-				clr[0] =LED_color(clr_gradient[1], clr_gradient[2], clr_gradient[0], count);
-				clr[1]= LED_color(clr_gradient[3], clr_gradient[4], clr_gradient[0], count);
-				clr[2]= LED_color(clr_gradient[5], clr_gradient[6], clr_gradient[0], count);
-
-				PRG_reg[pn] ^= (1 << 4);
-			}
-			break;
-
-			case true:
-			//needed for strip sequence
-				nzled = nz;
-				if (bitRead(COM_reg, 1) == true & bitRead(PRG_reg[pn],5)==true) nzled = 7 - nz;		
-				led = (ow*led_NZ) + nzled;
-				LED_set(0, led, clr[0],clr[1],clr[2]);
-				nz++;		
-
-				if (nz == led_NZ) {
-					nz = 0;
-					PRG_reg[pn] ^= (1 <<5); //toggle bit 5 change direction of leds in next row if needed.
-					ow++;
-					FastLED.show();
-					if (ow == led_OW) {
-						ow = 0;
-						PRG_reg[pn] ^= (1 << 4);
-					}
-				}
-				break;
-			}
+				fase = 6;
 			}
 		}
-	}
+		break;
+
+	case 6: //program leds, run fastled
+		//Serial.println(fase);
+
+		nzled = nz;
+		//Com_reg bit1 selects sequence of the ledstrips. 1 strip or a strip for every OostWest
+		if (bitRead(COM_reg, 1) == true & bitRead(PRG_reg[pn], 5) == true) nzled = 7 - nz;
+		led = (ow*led_NZ) + nzled;
+		if (led < OWkans*led_OW*led_NZ/10)	LED_set(0, led, clr[0], clr[1], clr[2]);
+		nz++;
+
+		if (nz == led_NZ) {
+			nz = 0;
+			PRG_reg[pn] ^= (1 << 5); //toggle bit 5 change direction of leds in next row if needed.
+			ow++;
+			FastLED.show();
+			if (ow == led_OW) {
+				ow = 0;
+				fase = 5; //load new color
+			}
+		}
+		break;
+
+
+	case 10: // load event
+		Serial.println(fase);
+		switch (event) {
+		case 0: //sunrise start, fase 0
+			Serial.println("sunrise fase 1");
+
+			OWkans = random(0,10);// 4 uit 10 kans op de rij tot waar oplichten
+
+			clr_gradient[0] = 100; //aantal stappen om eindwaarde te bereiken
+			clr_gradient[1] = 0; //begin waarde rood
+			clr_gradient[2] = 120; //eindwaarde rood				
+			clr_gradient[3] =0; //beginwaarde groen
+			clr_gradient[4] = 3;//eindwaarde groen
+			clr_gradient[5] = 0;//beginwaarde blauw
+			clr_gradient[6] = 0; //einde waarde blauw
+			fase = 5; //next load color
+
+			event = 1; //next event			
+			break;
+		case 1: //sunset 
+			Serial.println("sunrise fase 2");
+
+			clr_gradient[0] = 60; //aantal stappen om eindwaarde te bereiken
+			clr_gradient[1] = 120;//led_dl[0].r;// clr_temp[0]; //begin waarde rood
+			clr_gradient[2] = 130; //eindwaarde rood				
+			clr_gradient[3] = 1;// led_dl[0].g; //beginwaarde groen
+			clr_gradient[4] = 130;//eindwaarde groen
+			clr_gradient[5] = 1;// led_dl[0].b;//clr_temp[2];//beginwaarde blauw
+			clr_gradient[6] = 2; //einde waarde blauw
+			fase = 5; //next load color
+
+			event = 2;
+			break;
+		case 2:
+			Serial.println("sunrise fase 3");
+
+			clr_gradient[0] = 80; //aantal stappen om eindwaarde te bereiken
+			clr_gradient[1] = 130;//led_dl[0].r;// clr_temp[0]; //begin waarde rood
+			clr_gradient[2] = 160; //eindwaarde rood				
+			clr_gradient[3] = 130;// led_dl[0].g; //beginwaarde groen
+			clr_gradient[4] = 150;//eindwaarde groen
+			clr_gradient[5] = 2;// led_dl[0].b;//clr_temp[2];//beginwaarde blauw
+			clr_gradient[6] = 140; //einde waarde blauw
+			fase = 5; //next load color
+			event = 3;
+			break;
+
+		case 3:
+			//temp does nothing only reassigns to event 0
+			event = 0;
+			break;
+		}//close switch event
+		break;
+	}//close switch fase
 }
 
 void PRG_flashlight(int pn) {//
