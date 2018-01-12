@@ -115,6 +115,7 @@ void setup() {
 	VL_adresmin = DL_adresmin + 64;
 	EV_adresmin = VL_adresmin + 64;
 	
+	//FastLED.setBrightness (200); beter niet
 
 	//DeKoder part, interrupt on PIN2
 	DDRD &= ~(1 << 2);//bitClear(DDRD, 2); //pin2 input
@@ -853,11 +854,12 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 	static unsigned long kleurtijd = 0;
 	static byte event = 0; //what event? Sunrise sunset, clouds, rain, lightning etc
 	static byte nextevent = 0; //to follow the dayevent
-
-								  //nog niet definitief
+//nog niet definitief
 	static byte filternz = 4;  //verhouding getal 1-10
 	static byte filterow = 4;
 	static byte OWkans;
+	byte temp;
+
 
 	switch (fase) {
 	case 0: //after power-up, starts program and sets time to wake-up
@@ -880,7 +882,7 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 
 
 	case 5: //load new color
-		if (millis() - kleurtijd > 200) {
+		if (millis() - kleurtijd > 300) {
 			kleurtijd = millis();
 			t++;		
 			
@@ -916,32 +918,49 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 		switch (event) {
 
 			case 0: //sunrise
-			//set led met kleur eerst even gewoon hele hemel, kleur wel instellen per led
-			if (bitRead(clr_reg,0) == true) {
-				if (led_dl[led].r < clr_max[0]) led_dl[led].r = led_dl[led].r + clr_inc[0];
-				if (led_dl[led].g < clr_max[1]) led_dl[led].g = led_dl[led].g + clr_inc[1];
-				if (led_dl[led].b < clr_max[2]) led_dl[led].b = led_dl[led].b + clr_inc[2];
-			}
+			//set led met kleur eerst even gewoon hele hemel, kleur wel instellen per led			
+			
+				
 				if (bitRead(clr_reg, 1) == true) {
 					if (led_dl[led].r < clr_max[0])led_dl[led].r = led_dl[led].r + clr_inc[3];
 					if (led_dl[led].g < clr_max[1])led_dl[led].g = led_dl[led].g + clr_inc[4];
 					if (led_dl[led].b < clr_max[2])led_dl[led].b = led_dl[led].b + clr_inc[5];
 				}
 
-			if (led < OWkans*led_OW*led_NZ / 10) {	// random grens in ledhemel	
-			
-				if (bitRead(clr_reg, 2) == true) {
-					if (led_dl[led].r < clr_max[0])led_dl[led].r = led_dl[led].r + clr_inc[6];
-					if (led_dl[led].g < clr_max[1])led_dl[led].g = led_dl[led].g + clr_inc[7];
-					if (led_dl[led].b < clr_max[2])led_dl[led].b = led_dl[led].b + clr_inc[8];
+				temp = OWkans*led_OW*led_NZ / 10;
+				if (led < temp) {	// random grens in ledhemel	
+
+					if (bitRead(clr_reg, 2) == true) {
+						if (led_dl[led].r < clr_max[0])led_dl[led].r = led_dl[led].r + clr_inc[6];
+						if (led_dl[led].g < clr_max[1])led_dl[led].g = led_dl[led].g + clr_inc[7];
+						if (led_dl[led].b < clr_max[2])led_dl[led].b = led_dl[led].b + clr_inc[8];
+					}
+
+					
+					if (bitRead(clr_reg, 3) == true) {
+						if (led_dl[led].r < clr_max[0])led_dl[led].r = led_dl[led].r + clr_inc[9];
+						if (led_dl[led].g < clr_max[1])led_dl[led].g = led_dl[led].g + clr_inc[10];
+						if (led_dl[led].b < clr_max[2])led_dl[led].b = led_dl[led].b + clr_inc[11];
+					}
+					//Serial.println("geen grens");
 				}
-				if (bitRead(clr_reg, 4) == true) {
-					if (led_dl[led].r < clr_max[1])led_dl[led].r = led_dl[led].r + clr_inc[9];
-					if (led_dl[led].g < clr_max[2])led_dl[led].g = led_dl[led].g + clr_inc[10];
-					if (led_dl[led].b < clr_max[3])led_dl[led].b = led_dl[led].b + clr_inc[11];
+				else {					
+					//niveleren laatse 2 led rijen
+					if (led - (led_NZ<<1) < temp) {
+						led_dl[led].r = (led_dl[led+1].r >>1) + (led_dl[led - 1].r >>1);
+						led_dl[led].g = (led_dl[led+1].g >> 1) + (led_dl[led - 1].g >> 1);
+						led_dl[led].b = (led_dl[led+1].b >> 1) + (led_dl[led - 1].b >> 1);
+					}
+					if (bitRead(clr_reg, 0) == true) {
+						if (led_dl[led].r < clr_max[0]) led_dl[led].r = led_dl[led].r + clr_inc[0];
+						if (led_dl[led].g < clr_max[1]) led_dl[led].g = led_dl[led].g + clr_inc[1];
+						if (led_dl[led].b < clr_max[2]) led_dl[led].b = led_dl[led].b + clr_inc[2];
+					}
+
+
 				}
-			}
-			break;
+
+				break;
 
 			case 1: //sunset			
 
@@ -952,16 +971,18 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 				break;
 		}
 
-		nz++;		
+		nz++;	
+
 		
 		if (nz == led_NZ) {
 			nz = 0;
 			PRG_reg[pn] ^= (1 << 7); //toggle bit 7 change direction of leds in next row if needed.
 			ow++;
-			FastLED.show();
+			
 			if (ow == led_OW) {
 				ow = 0;
-				fase = 5; //load new color				
+				fase = 5; //load new color	
+				FastLED.show();
 			}
 		}
 		break;
@@ -971,49 +992,51 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 
 		Serial.print("Fase in Daglicht: ");
 		Serial.println(fase);
-
+		randomSeed(analogRead(0));
 		switch (event) {
 		case 0: //sunrise start, fase 0
 			Serial.println("sunrise fase 1");
-			OWkans = random(0, 10);// 4 uit 10 kans op de rij tot waar
+
+			OWkans = random(1, 6);// 4 uit 10 kans op de rij tot waar
 			Serial.print("owkans:  ");
 			Serial.println(OWkans);
 
 			//Max te reiken kleur random berekenen
-			clr_max[0] = 150; //rood
-			clr_max[1] = 150;//groen
-			clr_max[2] = 0;//blauw
-
+			clr_max[0] = 240; //rood
+			clr_max[1] = 230;//groen
+			clr_max[2] = 200;//blauw
 			
-
 			//4 tijdmomenten instellen en inc per stap, random berekenen
-			//Basis 
-			clr_start[0] = 1;
-			clr_stop[0] = 3;
-			clr_inc[0] = 1; clr_inc[1] = 1; clr_inc[2] = 1;
+			//na  grens
+			clr_start[0] =100;
+			clr_stop[0] =254;
+			clr_inc[0] =1; clr_inc[1] =1; clr_inc[2] =1;
 
-			clr_start[1] = 100;
-			clr_stop[1] = 255;
-			clr_inc[3] = 1; clr_inc[4] = 1; clr_inc[5] = 1;
+			//Gehele hemel           
+			clr_start[1] =154;
+			clr_stop[1] = 254;
+			clr_inc[3] = 3; clr_inc[4] = 3; clr_inc[5] = 3;
 
-			clr_start[2] = 2;
-			clr_stop[2] = 100;
-			clr_inc[6] = 2; clr_inc[7] = 0; clr_inc[8] = 0;
+			//Voor de grens
+			clr_start[2] = 0;
+			clr_stop[2] =75;
+			clr_inc[6] = 2; clr_inc[7] =0; clr_inc[8] = 0;
 
-			clr_start[3] = 40;
-			clr_stop[3] = 140;
-			clr_inc[9] = 1; clr_inc[10] = 3; clr_inc[11] = 0;
+			clr_start[3] =50;
+			clr_stop[3] = 125;
+			clr_inc[9] = 0; clr_inc[10] = 1; clr_inc[11] = 0;
 
 			nextevent = 3; //next event		
 			fase = 5; //load color
 			break;
 
 		case 1: //sunset 
-			Serial.println("sunset, echt waar");
+			Serial.println("sunset");
 
-			clr_min[0] = 2;
-			clr_min[1] = 1;
-			clr_min[2] = 0;
+			clr_min[0] = 1;
+			clr_min[1] = 2;
+			clr_min[2] = 2;
+
 
 			fase = 5; //next load color		
 			nextevent = 4;
