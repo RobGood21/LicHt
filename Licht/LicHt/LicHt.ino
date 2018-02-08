@@ -23,8 +23,8 @@
 
 //variables for matrix daglicht, assignable by CV
 //nu instelling voor demo
-byte led_OW=6; //oost-west aantal leds
-byte led_NZ=8; //noord-zuid aantal leds
+byte led_OW=8; //oost-west aantal leds
+byte led_NZ=30; //noord-zuid aantal leds
 
 #define tday 15 //tday how long is a modeltimeday in minute 24 is good value lager dan 10 werkt het geheel niet goed
 
@@ -40,12 +40,24 @@ int COM_DCCAdres=64;
 byte COM_reg; 
 //bit0 test PRG active(true)
 //bit1 ledstrips direction N>Z>N>Z>N>Z>N enz (true) or N>Z N>Z N>Z N>Z enz (false, standard)
+//bit3 day or night (also manual) false=day, true = night
 //bit7; testmode repeats same program (true)
+
+
+
 
 byte PRG_reg[32]; 
 //bit0 active(true) 
 //bit1=initialised (true) 
 //bit7-bit2 exclusive for program
+
+byte SW_reg; //register booleans for the switch states
+/*
+bit0 = status switch A0  (dag nacht)
+bit1=status switch A1 (clock/ program)
+*/
+
+
 
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
@@ -100,6 +112,12 @@ void setup() {
 
 	DDRB |= (1 << 5);	//pin13
 	DDRB |= (1 << 4);  //Pin12 als output
+	DDRB |= (1 << 3); //PIN11 as output
+
+	DDRC &= ~(1 << 0); //set PINA0 as input
+	DDRC &= ~(1 << 1); //set PINA1 as input
+
+
 	Clk = millis();
 
 	//Fastled part
@@ -442,7 +460,9 @@ void COM_Clk() {
 			//minium timing is an hour modelroad time, faster events will be done on real time
 		Clk = millis();
 		mt_min ++;
-		PINB |=(1 << 5); // toggle led on pin 13
+		
+		PINB |=(1 << 3); // toggle led on pin 11, toont of de clock loopt....
+		
 		if (mt_min > 60) {
 			mt_min = 0;
 			mt_hr ++;
@@ -502,6 +522,51 @@ void COM_ps(int pn) { //ps=program switch
 		break;
 	}
 }
+void COM_switch() {
+	//handles the manual switches in the project
+	static long Sw_time = 0;
+	if (millis() - Sw_time >50) { //every xxms
+		Sw_time = millis(); //reset counter
+		//test switch A0 dag/nacht
+		if (bitRead(PINC, 0) == false) { //switch A0 pressed		
+		
+		if (bitRead(SW_reg, 0) == false) {
+				SW_reg |= (1 << 0); //set switchstate
+			}
+		}
+		else {
+			if (bitRead(SW_reg, 0) == true) {
+				//switch is released action
+				SW_reg &= ~(1 << 0); //reset switch state
+				//toggle day or night
+				COM_reg ^= (1 << 3); //bit3 false = day, true is night
+				SW_dl();
+
+				//PINB |= (1 << 5); // toggle led on pin 13
+			}
+		}
+
+
+		//test switch A1 Clock/program
+
+
+
+	}
+}
+
+void SW_dl() {
+	//schakeld van dag naar nacht
+	if (bitRead(COM_reg, 3) == false) { //dag led rood?
+		PORTB |= (1 << 5);
+		PORTB &= ~(1 << 4);
+	}
+	else { //nacht
+		PORTB |= (1 << 4);
+		PORTB &= ~(1 << 5);
+	}
+}
+
+
 void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//application for DCC monitor
 	if (type == true) {
@@ -711,7 +776,7 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 		if (millis() - kleurtijd >500) {
 			kleurtijd = millis();
 			t++;		
-			Serial.println(t);
+			//Serial.println(t);
 
 			if (t > 254) { //254 einde cyclus bereikt
 				t = 0;
@@ -876,7 +941,7 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 			break;
 
 		case 1: //sunset 
-			Serial.println("sunset");
+			//Serial.println("sunset");
 			clr_min =random(0,5);
 
 			//begin hemel instellen
@@ -887,8 +952,8 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 			}
 			//tijden instellen
 			OWkans = random(1, 6);// 4 uit 10 kans op de rij tot waar
-			Serial.print("owkans:  ");
-			Serial.println(OWkans);
+			//Serial.print("owkans:  ");
+			//Serial.println(OWkans);
 			
 			//**********SUNSET
 			//4 tijdmomenten instellen en inc per stap, random berekenen
@@ -1106,4 +1171,5 @@ void loop() {
 	COM_Clk();
 	COM_ProgramAssign();
 	DEK_DCCh();
+	COM_switch();
 }
