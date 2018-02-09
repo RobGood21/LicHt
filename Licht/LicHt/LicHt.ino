@@ -126,14 +126,15 @@ void setup() {
 
 	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, 240);//create strip of 32leds on pin7 'verlichting' Xx leds on pin 8 'Daglicht'
 	FastLED.addLeds<NEOPIXEL, LPvl>(led_vl,32);//create strip of 32leds on pin7 'verlichting'
-	FastLED.addLeds<NEOPIXEL, LPev>(led_ev, 16);//create strip of 16 leds on pin6 'Events'
+	//FastLED.addLeds<NEOPIXEL, LPev>(led_ev, 16);//create strip of 16 leds on pin6 'Events'
 	
 	
 	DL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
 	VL_adresmin = DL_adresmin + 64;
-	EV_adresmin = VL_adresmin + 64;
-	
-	//FastLED.setBrightness (200); beter niet
+	//EV_adresmin = VL_adresmin + 64;
+
+	//FastLED.setMaxPowerInVoltsAndMilliamps(5, 8000);	
+	//FastLED.setBrightness (255); //beter niet
 
 	//DeKoder part, interrupt on PIN2
 	DDRD &= ~(1 << 2);//bitClear(DDRD, 2); //pin2 input
@@ -474,8 +475,7 @@ void COM_Clk() {
 }
 void COM_ProgramAssign() {
 	//plays, assigns programs only 1 every cycle 
-	//first 64 active programs 1by1 then only 1 not active programs, then 64 active and so on. 
-	
+	//first 64 active programs 1by1 then only 1 not active programs, then 64 active and so on. 	
 	//after start all programs must be passed once
 	static byte init = 0;
 	if (init == false) {
@@ -508,7 +508,10 @@ void COM_ps(int pn) { //ps=program switch
 	//1-10 daylight and weather 11/30 lighting houses and streetlights  31 > no idea yet
 	switch (pn) {
 	case 1:
-		PRG_Daglicht(pn);
+		//PRG_Daglicht(pn);
+		break;
+	case 2: //schakel daglicht in of uit
+		PRG_dl(pn);
 		break;
 	case 11:
 		PRG_flashlight(pn);
@@ -525,6 +528,7 @@ void COM_ps(int pn) { //ps=program switch
 void COM_switch() {
 	//handles the manual switches in the project
 	static long Sw_time = 0;
+
 	if (millis() - Sw_time >50) { //every xxms
 		Sw_time = millis(); //reset counter
 		//test switch A0 dag/nacht
@@ -540,29 +544,35 @@ void COM_switch() {
 				SW_reg &= ~(1 << 0); //reset switch state
 				//toggle day or night
 				COM_reg ^= (1 << 3); //bit3 false = day, true is night
-				SW_dl();
+				SW_dl(2);
 
 				//PINB |= (1 << 5); // toggle led on pin 13
 			}
 		}
-
-
 		//test switch A1 Clock/program
-
-
-
 	}
 }
 
-void SW_dl() {
+void SW_dl(byte pn) {
+
 	//schakeld van dag naar nacht
+	//prg_reg van dit program bit0=active, bit1=initialized, bit2=nacht true, dag false
+
+	PRG_reg[pn] |= (1 << 0); //starts program 2 PRG_dl()
+	PRG_reg[pn] |= (1 << 1);
+	PRG_hr[pn] = 30;//no timer start
+	PRG_reg[pn] |= (1 << 3);
+
 	if (bitRead(COM_reg, 3) == false) { //dag led rood?
 		PORTB |= (1 << 5);
 		PORTB &= ~(1 << 4);
+		PRG_reg[pn] &= ~(1 << 2);
 	}
 	else { //nacht
 		PORTB |= (1 << 4);
 		PORTB &= ~(1 << 5);
+		PRG_reg[pn] |= (1 << 2);
+		
 	}
 }
 
@@ -1013,6 +1023,83 @@ void PRG_Daglicht(int pn) { //versie 10jan2018
 		}//close switch event
 		break;
 	}//close switch fase
+}
+void PRG_dl(byte pn) {	
+	//prg_reg bit0=init bit1=active bit2=dagnacht bit3=changed bit4=sunrise,sunset in motion
+	
+	if (bitRead(PRG_reg[pn], 0) == true) { //to prevent startup problems
+	//schakeld daglicht=program 2	
+
+
+	static byte ledcount = 0;
+	static int cycle = 0;
+	static long t = 0;
+	static byte fase = 0; 
+	
+	if (bitRead(PRG_reg[pn], 3) == true){ //reset after switchstate change
+		PRG_reg[pn] &= ~(1 << 3);
+		cycle = 0;
+		ledcount = 0;
+		fase = 0;
+	}
+
+	if (millis() - t > 1) {
+		t = millis();	
+
+			switch (fase){
+			case 0:
+				if (bitRead(PRG_reg[pn], 2) == false) { //dag
+					fase = 10;
+				}
+				else {
+					fase = 20;
+				}
+				break;
+
+			case 10: //susnrise
+					if (led_dl[ledcount].r < 255) led_dl[ledcount].r ++;
+					if (led_dl[ledcount].g < 255) led_dl[ledcount].g++;
+					if (led_dl[ledcount].b < 255) led_dl[ledcount].b++;
+				break;
+
+
+			case 20: //sunset
+					if (led_dl[ledcount].r >1) led_dl[ledcount].r--;
+					if (led_dl[ledcount].g >1 ) led_dl[ledcount].g--;
+					if (led_dl[ledcount].b >1 ) led_dl[ledcount].b--;
+				break;
+			}
+
+			ledcount++;
+			
+			if (ledcount > (led_NZ*led_OW)-1) {
+			FastLED.show();
+			ledcount = 0;
+			cycle++;
+			if (bitRead(PRG_reg[pn], 2) == false) { //flashes the led status
+				PORTB ^= (1 << 5);
+			}
+			else {
+				PORTB ^= (1 << 4);
+			}
+			
+			if (cycle > 300) {
+				cycle = 0;
+			PRG_reg[pn] &= ~(1 << 0);
+			PRG_reg[pn] &= ~(1 << 1); //program inactief
+			fase = 0;
+			
+			if (bitRead(PRG_reg[pn], 2) == false) { //stops flashing led
+				PORTB |= (1 << 5);
+			}
+			else {
+				PORTB |= (1 << 4);
+			}
+			//Serial.println("stop");
+			}
+		}		
+	}
+}
 }
 void PRG_flashlight(int pn) {//
 	/*
