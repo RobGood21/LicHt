@@ -470,6 +470,7 @@ void COM_Clk() {
 		if (mt_min > 60) {
 			mt_min = 0;
 			mt_hr ++;
+			randomSeed(analogRead(0)); //feed new random numbers
 			if (mt_hr > 24) {
 				mt_hr = 0;
 			}
@@ -785,7 +786,7 @@ void PRG_dl(byte pn) {
 
 	//schakeld daglicht=program 2	
 
-	static byte weer; //welk weertype voor komende dag...
+	static byte weer=1; //welk weertype voor komende dag...
 	static byte fxb; //hoe ver het effect naar het westen
 	static byte rled[2]; //willekeurige byte
 	static byte sp = 1; //speed hoeveel er bij komt
@@ -798,7 +799,7 @@ void PRG_dl(byte pn) {
 	*/
 	static byte maxclr[3]; //max te bereiken kleuren per weer type
 	static byte ledcount = 0; // welke led
-	static byte sc = 0; //laatste led
+	static byte sc = 0; //laatste led, en teller in fase 113
 	static byte s = 0; //shift, aantal over geslagen leds dynamisch
 	static byte st = 0; //shift overgeslagen leds statisch
 
@@ -826,17 +827,13 @@ void PRG_dl(byte pn) {
 				al = led_NZ*led_OW - 1; //=239
 
 				if (bitRead(COM_reg, 3) == false) { //sunrise
-
 					//weer = random(1, 4); //bepaal weertype
-
 					weer = 1;
-
-
 					switch(weer) {
 					case 1: //zonnig
 						fase = 10;
 						//periode = 20;
-						st = random(0, 3); //aantal leds wat wordt overgeslagen. 
+						st = random(0, 5); //aantal leds wat wordt overgeslagen. 
 						fxb = random(led_NZ, al * 7/10);
 						
 						break;
@@ -971,42 +968,104 @@ void PRG_dl(byte pn) {
 //******************SUNSET******SUNSET********SUNSET*******
 			case 100: //sunset
 				maxclr[0] = 0;
-				maxclr[1] = 1;
-				maxclr[2] = 1;
+				maxclr[1] = 0;
+				maxclr[2] = 0;
 				PRG_reg[pn] |= (1 << 6);
 				fase = 110;
+
+				switch (weer) {
+				case 1:
+					st = random(0, 3); //aantal leds wat wordt overgeslagen. 
+					fxb = random(al*4/10, al-led_NZ);
+					maxclr[0] = random(60, 120);
+					maxclr[1] = maxclr[0];
+					maxclr[2] = maxclr[0];
+					break;
+				case 2:
+					break;
+				case 3:
+					break;
+				case 4:
+					break;
+				}
 				break;
 
-			case 110:
-				
-				//Serial.println("-------------");
-				//Serial.println(ledcount);
-				//Serial.println(bitRead(PRG_reg[pn], 6));
+			case 110: //weertype 1
+				//Eerst  terug naar schemering
+				zwart(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], true);
 
-				if (led_dl[ledcount].r > maxclr[0]) {
-					led_dl[ledcount].r--;
-					PRG_reg[pn] &= ~(1 << 6);
-				}
-				if (led_dl[ledcount].r < maxclr[0]) led_dl[ledcount].r++;
+				//if (ledcount == 50) Serial.println(led_dl[ledcount].r);
 
-				if (led_dl[ledcount].g > maxclr[1]) {
-					led_dl[ledcount].g--;
-					PRG_reg[pn] &= ~(1 << 6);
-				}
-				if (led_dl[ledcount].g < maxclr[1]) led_dl[ledcount].g++;
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
+					fase = 111;
+					//Serial.println("naar fase 111");
+				}				
+				maxclr[1] = maxclr[0] * 5/ 10;
+				break;
 
-				if (led_dl[ledcount].b > maxclr[2]) {
-					led_dl[ledcount].b--;	
-					PRG_reg[pn] &= ~(1 << 6);
+			case 111:
+				//Geel instellen Blauw eruit groen halveren
+				if (ledcount > fxb) {
+
+					if (ledcount - sc > st) {
+						sc = ledcount;
+
+						if (led_dl[ledcount].g > maxclr[1]) {
+							led_dl[ledcount].g--;
+							PRG_reg[pn] &= ~(1 << 6);
+						}
+
+						if (led_dl[ledcount].b > 2 ) {
+							led_dl[ledcount].b -= 2;							
+							PRG_reg[pn] &= ~(1 << 6);
+						}
 					}
-				if (led_dl[ledcount].b < maxclr[2]) led_dl[ledcount].b++;
+					else {
+						//alle andere leds dimmen
+					zwart(ledcount, 1, 10, 10, 10, false);
+					}
+				}
+				else {
+					//alle andere leds dimmen
+					zwart(ledcount, 1, 10, 10, 10, false);
+				}
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
+					if (maxclr[1] > 0) {
+						maxclr[1] = 0;
+					}
+					else {
+						maxclr[0] = 1;
+						maxclr[1] = 1;
+						maxclr[2] = 1;
+						fase = 112; //blackout
+					}
+				}
+				//per cyclus 1x willekeurige led volledig uit
 
-				//Serial.println(bitRead(PRG_reg[pn], 6));
-				//Serial.println("");
+				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
+				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
 
-				if((ledcount >= al) & (bitRead(PRG_reg[pn],6)==true)) fase = 1;
-					break;
-			}
+				break;
+
+			case 112:
+					
+
+				zwart(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], true);
+				//stop als eindkleur is bereikt
+				if (ledcount >= al & bitRead(PRG_reg[pn], 6) == true) fase = 1;
+				
+				
+				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
+				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
+
+
+
+
+
+
+				break;	
+}
+
 
 //**********************end switch fase
 			
@@ -1034,7 +1093,7 @@ void PRG_dl(byte pn) {
 				else {
 					PORTB ^= (1 << 4);
 				}
-				if (cycle > 300) PRG_reg[pn] |= (1 << 7); //stop program
+				//if (cycle > 300) PRG_reg[pn] |= (1 << 7); //stop program
 			}	//ledcount	
 
 			//STOP PROGRAM (bit7 of register = true)
@@ -1062,7 +1121,6 @@ void wit(byte led, byte inc, byte mr, byte mg, byte mb,boolean stop) {
 		led_dl[led].r = led_dl[led].r + inc;
 		if (stop==true) PRG_reg[2] &= ~(1 << 6);
 	}
-
 	if (led_dl[led].g < mg) {
 		led_dl[led].g = led_dl[led].g + inc;
 		if(stop==true) PRG_reg[2] &= ~(1 << 6);
@@ -1072,6 +1130,41 @@ void wit(byte led, byte inc, byte mr, byte mg, byte mb,boolean stop) {
 		if(stop==true)PRG_reg[2] &= ~(1 << 6);
 	}
 }
+void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop) {
+
+	if (led_dl[led].r > mr) {
+		led_dl[led].r = led_dl[led].r - dec;
+		if (stop == true) PRG_reg[2] &= ~(1 << 6);
+	}
+	if (led_dl[led].g > mg) {
+		led_dl[led].g = led_dl[led].g - dec;
+		if (stop == true) PRG_reg[2] &= ~(1 << 6);
+	}
+	if (led_dl[led].b > mb) {
+		led_dl[led].b = led_dl[led].b - dec;
+		if (stop == true)PRG_reg[2] &= ~(1 << 6);
+	}
+
+	//correctie te weinig van 1 kleur, zwart blijft zwart
+	if ((led_dl[led].r + led_dl[led].g + led_dl[led].b) > 0) {
+		if (led_dl[led].r < mr) {
+			led_dl[led].r++;
+			if (stop == true)PRG_reg[2] &= ~(1 << 6);
+		}
+
+		if (led_dl[led].g < mg) {
+			led_dl[led].g++;
+			if (stop == true)PRG_reg[2] &= ~(1 << 6);
+		}
+		if (led_dl[led].b < mb) {
+			led_dl[led].b++;
+			if (stop == true)PRG_reg[2] &= ~(1 << 6);
+		}
+	}
+
+
+}
+
 void PRG_dld(byte pn) {
 	//switches between day and night without sunrise or sunset		
 	static unsigned long t = 0;
