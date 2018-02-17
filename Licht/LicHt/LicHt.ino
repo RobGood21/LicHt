@@ -800,6 +800,7 @@ void PRG_dl(byte pn) {
 	static byte maxclr[3]; //max te bereiken kleuren per weer type
 	static byte ledcount = 0; // welke led
 	static byte sc = 0; //laatste led, en teller in fase 113
+	static byte teller = 0; //algemene teller
 	static byte s = 0; //shift, aantal over geslagen leds dynamisch
 	static byte st = 0; //shift overgeslagen leds statisch
 
@@ -832,8 +833,8 @@ void PRG_dl(byte pn) {
 					switch(weer) {
 					case 1: //zonnig
 						fase = 10;
-						//periode = 20;
-						st = random(0, 5); //aantal leds wat wordt overgeslagen. 
+						periode = 1;
+						st = random(1, 5); //aantal leds wat wordt overgeslagen. 
 						fxb = random(led_NZ, al * 7/10);
 						
 						break;
@@ -866,18 +867,29 @@ void PRG_dl(byte pn) {
 
 			case 10: //susnrise much effect
 				//Enkele leds rood maken
+				if (rled[0] == ledcount) {
 
-				if (ledcount - sc > st ) {
-					sc = ledcount;
-					if (ledcount < fxb) led_dl[ledcount]= CRGB (1, 0, 0);
+					if (ledcount - sc > st ) {
+						sc = ledcount;
+						if (ledcount < fxb) led_dl[ledcount]= CRGB (3, 0, 0);
+					}
 				}
 
-				if (ledcount >= al) { //max=ledcount 239
+				if (ledcount==rled[1]) led_dl[ledcount]= CRGB(20, 20, 20);
+					
+				teller++;
+
+
+
+				if (teller>50) {
+					teller = 0;
 					fase = 11;	
 					maxclr[0] = random(20, 200); //te bereiken rode kleur instellen
 					maxclr[1] = maxclr[0] * 3/ 10;
 				}
-				//FastLED.show();
+
+
+
 				break;
 
 			case 11:
@@ -980,6 +992,7 @@ void PRG_dl(byte pn) {
 					maxclr[0] = random(60, 120);
 					maxclr[1] = maxclr[0];
 					maxclr[2] = maxclr[0];
+					teller = random(1,50);
 					break;
 				case 2:
 					break;
@@ -990,18 +1003,19 @@ void PRG_dl(byte pn) {
 				}
 				break;
 
-			case 110: //weertype 1
-				//Eerst  terug naar schemering
-				zwart(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], true);
-
-				//if (ledcount == 50) Serial.println(led_dl[ledcount].r);
-
-				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
+			case 110:
+				if (ledcount>=al) teller++;
+				if (teller < 150) {
+					zwart(ledcount, 1, 20, 20, 20, false);
+				}
+				else {
 					fase = 111;
-					//Serial.println("naar fase 111");
-				}				
-				maxclr[1] = maxclr[0] * 5/ 10;
+					maxclr[1] = maxclr[0] * 5/ 10;
+
+				}
 				break;
+
+
 
 			case 111:
 				//Geel instellen Blauw eruit groen halveren
@@ -1037,7 +1051,8 @@ void PRG_dl(byte pn) {
 						maxclr[0] = 1;
 						maxclr[1] = 1;
 						maxclr[2] = 1;
-						fase = 112; //blackout
+						fase = 112; //blackout (
+						periode = 50; //tijd vertragen
 					}
 				}
 				//per cyclus 1x willekeurige led volledig uit
@@ -1048,22 +1063,24 @@ void PRG_dl(byte pn) {
 				break;
 
 			case 112:
-					
+				zwart(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], false);
+				teller++;
+				if (teller < (al*8/10)) {
+					led_dl[random(0, al)] = CRGB(0, 0, 0);
+				}
+				else {
+					fase = 113;
+					periode = 1;
+				}
+				break;	
 
-				zwart(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], true);
+			case 113:				
+				zwart(ledcount, 1, maxclr[1], maxclr[1], maxclr[1], true);
 				//stop als eindkleur is bereikt
-				if (ledcount >= al & bitRead(PRG_reg[pn], 6) == true) fase = 1;
-				
-				
+				if (ledcount >= al & bitRead(PRG_reg[pn], 6) == true) fase = 1;							
 				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
 				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
-
-
-
-
-
-
-				break;	
+				break;
 }
 
 
