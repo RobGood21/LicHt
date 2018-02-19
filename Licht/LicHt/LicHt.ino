@@ -1006,83 +1006,101 @@ void PRG_dl(byte pn) {
 			case 110:
 				if (ledcount>=al) teller++;
 				if (teller < 150) {
-					zwart(ledcount, 1, 20, 20, 20, false);
+					zwart(ledcount, 1, 20, 20, 20, false,false);
 				}
 				else {
 					fase = 111;
-					maxclr[1] = maxclr[0] * 5/ 10;
+					maxclr[1] = maxclr[0] * 3/ 10;
+					teller = 0;
 
 				}
 				break;
 
-
-
 			case 111:
-				//Geel instellen Blauw eruit groen halveren
+				//cyclus eerst alles verlagen
+				zwart(ledcount, 1, 5, 5, 5, false,false);
+				//alle blauw weghalen uit geselcteerde leds
 				if (ledcount > fxb) {
-
 					if (ledcount - sc > st) {
 						sc = ledcount;
-
-						if (led_dl[ledcount].g > maxclr[1]) {
-							led_dl[ledcount].g--;
-							PRG_reg[pn] &= ~(1 << 6);
-						}
-
-						if (led_dl[ledcount].b > 2 ) {
-							led_dl[ledcount].b -= 2;							
-							PRG_reg[pn] &= ~(1 << 6);
-						}
+						zwart(ledcount, 2, 200, maxclr[1], 0, true,false);
 					}
 					else {
-						//alle andere leds dimmen
-					zwart(ledcount, 1, 10, 10, 10, false);
+						zwart(ledcount, 1, 10, 10, 10, false,false);
+						if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);						
 					}
 				}
 				else {
-					//alle andere leds dimmen
-					zwart(ledcount, 1, 10, 10, 10, false);
-				}
-				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
-					if (maxclr[1] > 0) {
-						maxclr[1] = 0;
-					}
-					else {
-						maxclr[0] = 1;
-						maxclr[1] = 1;
-						maxclr[2] = 1;
-						fase = 112; //blackout (
-						periode = 50; //tijd vertragen
-					}
-				}
-				//per cyclus 1x willekeurige led volledig uit
+					zwart(ledcount, 1, 10, 10, 10, false,false);
+					if (ledcount == rled[1])led_dl[ledcount] = CRGB(0, 0, 0);
 
-				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
-				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
+				}
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true))fase = 112; //stop
 
 				break;
 
 			case 112:
-				zwart(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], false);
-				teller++;
-				if (teller < (al*8/10)) {
-					led_dl[random(0, al)] = CRGB(0, 0, 0);
-				}
-				else {
-					fase = 113;
-					periode = 1;
-				}
-				break;	
 
-			case 113:				
-				zwart(ledcount, 1, maxclr[1], maxclr[1], maxclr[1], true);
-				//stop als eindkleur is bereikt
-				if (ledcount >= al & bitRead(PRG_reg[pn], 6) == true) fase = 1;							
+				if (ledcount >= al) {
+					teller ++;					
+				}
+				if (teller < 50) {					
+					zwart(ledcount, 1, 3, 3, 3, false,false);
+					if (ledcount == rled[0])led_dl[ledcount] = CRGB(50, 20, 0);
+					if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);							
+				}
+				else {			
+					fase = 113;
+				}		
+				break;
+
+			case 113:
+				//Wit verder weg, rest knal rood
+				if (ledcount > fxb) {
+					if (ledcount - sc > st) {
+						sc = ledcount;
+						zwart(ledcount, 1, 200, 0, 0, true,false);
+					}
+				}
+
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true))fase = 114; //stop
+				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
+
+				break;
+
+			case 114:
+				zwart(ledcount,1, 2, 2, 2, true,false);
 				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
 				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
+					fase = 200; //stop
+				}
 				break;
-}
+			case 200:
+				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
+				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
+				zwart(ledcount, 1, 1, 1, 1, true, true);
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
+					fase = 201; 
+					teller = al;
 
+				}
+	break;
+
+case 201:
+	//leds uitschakelen tot gekozen aantal
+	if (ledcount >= al) {
+		if (teller > 0) {
+		teller--;
+		led_dl[rled[0]] = CRGB(0, 0, 0);
+		led_dl[rled[1]] = CRGB(0, 0, 0);
+	}
+		else {
+			fase = 1;
+		}
+	}
+	break;
+}
 
 //**********************end switch fase
 			
@@ -1099,7 +1117,7 @@ void PRG_dl(byte pn) {
 				//Serial.print("*******  "); //;
 				//Serial.println(bitRead(PRG_reg[pn], 6));
 
-				cycle ++;			
+				//cycle ++;			
 				sc = 0;
 				s++;
 				if (s > 5) s = 0;
@@ -1147,23 +1165,29 @@ void wit(byte led, byte inc, byte mr, byte mg, byte mb,boolean stop) {
 		if(stop==true)PRG_reg[2] &= ~(1 << 6);
 	}
 }
-void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop) {
-
+void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop,boolean nacht) {
+	static byte temp;
+	temp = dec;
 	if (led_dl[led].r > mr) {
-		led_dl[led].r = led_dl[led].r - dec;
+		if (led_dl[led].r < dec)temp = led_dl[led].r;
+		led_dl[led].r = led_dl[led].r - temp;
+		temp = dec;
 		if (stop == true) PRG_reg[2] &= ~(1 << 6);
 	}
 	if (led_dl[led].g > mg) {
-		led_dl[led].g = led_dl[led].g - dec;
+		if (led_dl[led].g < dec)temp = led_dl[led].g;
+		led_dl[led].g = led_dl[led].g - temp;
 		if (stop == true) PRG_reg[2] &= ~(1 << 6);
 	}
 	if (led_dl[led].b > mb) {
-		led_dl[led].b = led_dl[led].b - dec;
+		if (led_dl[led].b < dec)temp = led_dl[led].b;
+		led_dl[led].b = led_dl[led].b - temp;
 		if (stop == true)PRG_reg[2] &= ~(1 << 6);
 	}
 
+		
 	//correctie te weinig van 1 kleur, zwart blijft zwart
-	if ((led_dl[led].r + led_dl[led].g + led_dl[led].b) > 0) {
+	if ((led_dl[led].r + led_dl[led].g + led_dl[led].b) > 0 & nacht==true) {
 		if (led_dl[led].r < mr) {
 			led_dl[led].r++;
 			if (stop == true)PRG_reg[2] &= ~(1 << 6);
@@ -1179,7 +1203,7 @@ void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop) {
 		}
 	}
 
-
+	
 }
 
 void PRG_dld(byte pn) {
