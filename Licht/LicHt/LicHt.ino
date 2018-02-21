@@ -818,6 +818,7 @@ void PRG_dl(byte pn) {
 		teller = 0;
 		ledcount = 0;
 		fase = 0;
+		periode = 1;
 		}
 
 	if (millis() - t > periode) {
@@ -842,6 +843,7 @@ void PRG_dl(byte pn) {
 
 						break;
 					case 2: //half bewolkt, vaak zon
+						fxb = random(led_NZ, al * 7 / 10);
 						fase = 20;
 						break;
 					case 3: //bewolkt
@@ -857,16 +859,22 @@ void PRG_dl(byte pn) {
 					}
 				}
 				else { //sunset
-
 					weer = 2; //random maken
 
 					switch (weer) {
 					case 1:
-						fase = 100;
+						fase = 110;
+						st = random(0, 3); //aantal leds wat wordt overgeslagen. 
+						fxb = random(al * 4 / 10, al - led_NZ);
+						maxclr[0] = random(60, 120);
+						maxclr[1] = maxclr[0];
+						maxclr[2] = maxclr[0];
+						teller = random(1, 50);
 						break;
 					case 2:
 						fase = 120;
-
+						fxb = random(al * 4 / 10, al - led_NZ);
+						teller = 0;
 						break;
 					case 3:
 						fase = 130;
@@ -954,13 +962,27 @@ void PRG_dl(byte pn) {
 						FastLED.show();
 					}
 
+					//if (ledcount == rled[1] & ledcount < fxb & bitRead(PRG_reg[pn], 5) == true) led_dl[ledcount] = CRGB(250, 0, 0);
+					if (ledcount == rled[2] & bitRead(PRG_reg[pn], 4) == true) led_dl[ledcount] = CRGB(250, 130, 0);
+
 					if (ledcount >= al) teller++;
-					if (teller > 10) {
-						fase = 1;
-						periode = 1;
+
+					
+					if (teller > (al*7 / 10)) {
 						teller = 0;
+						fase = 41;
+						maxclr[0] = random(180, 250);
+						maxclr[1] = maxclr[0]; maxclr[2] = maxclr[0];
 					}
-				break;
+					else {
+						if (teller > (al*1 / 10) & teller < (al*2/10)) {
+							if (ledcount == rled[1] & ledcount < fxb) led_dl[ledcount] = CRGB(250, 0, 0);
+						}
+						if (teller > (al * 2 / 10) & teller < (al*4 / 10)) {
+							if (ledcount == rled[2]) led_dl[ledcount] = CRGB(250, 130, 0);
+						}						
+					}
+					break;
 
 //***************WEER 3
 			case 30:
@@ -982,35 +1004,13 @@ void PRG_dl(byte pn) {
 				}
 				break;
 
-			case 41:
+			case 41: //to full daylight
 				wit(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], true);
 				if (ledcount >= al & bitRead(PRG_reg[pn], 6) == true) fase = 1;
 				break;
 
 //******************SUNSET******SUNSET********SUNSET*******
 			case 100: //sunset
-				maxclr[0] = 0;
-				maxclr[1] = 0;
-				maxclr[2] = 0;
-				PRG_reg[pn] |= (1 << 6);
-				fase = 110;
-
-				switch (weer) {
-				case 1:
-					st = random(0, 3); //aantal leds wat wordt overgeslagen. 
-					fxb = random(al*4/10, al-led_NZ);
-					maxclr[0] = random(60, 120);
-					maxclr[1] = maxclr[0];
-					maxclr[2] = maxclr[0];
-					teller = random(1,50);
-					break;
-				case 2:
-					break;
-				case 3:
-					break;
-				case 4:
-					break;
-				}
 				break;
 
 			case 110:
@@ -1078,8 +1078,44 @@ void PRG_dl(byte pn) {
 				zwart(ledcount,1, 2, 2, 2, true,false);
 				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
 				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
-				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
-					fase = 200; 
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true))fase = 200; 
+				
+				break;
+
+			case 120:				
+				maxclr[0] = random(40, 90); maxclr[1] = maxclr[0]; maxclr[2] = maxclr[0];
+				fase = 121;
+				break;
+
+			case 121: //om ongewenst case 122 uitvoeren te voorkomen
+				wit(ledcount, 0, 20, 20, 20, true);
+				if (ledcount >= al) {
+					if (bitRead(PRG_reg[pn], 6) == true) {
+						fase = 122;
+
+					}
+					else {
+						fase = 1;
+					}
+				}
+				break;
+
+			case 122:
+				zwart(ledcount, 2, maxclr[0], maxclr[1], maxclr[2], true, false);
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true))fase = 123;
+				if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
+				break;
+
+			case 123:
+				if (ledcount >=al) teller++;
+				if (teller < (al*2/10)) {
+					zwart(ledcount, 1, 5, 5, 5, false, false);
+					if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
+					if (ledcount == rled[2] & ledcount > fxb)led_dl[ledcount] = CRGB(90, 30, 0);
+					if (ledcount == rled[1])led_dl[ledcount] = CRGB(100, 30, 0);
+				}
+				else {
+					fase = 200;
 				}
 				break;
 
@@ -1089,21 +1125,31 @@ void PRG_dl(byte pn) {
 				break;
 
 			case 141:
-				zwart(ledcount, 1, 10, 10, 10, true,false);
+				zwart(ledcount, 1, 3, 3, 3, true,false);
 				if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
-				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true))fase = 200;
+				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
+					fase = 200;
+					periode = 30;
+				}
 				break;
 
 			case 200:
 				if (ledcount == rled[0]) led_dl[ledcount] = CRGB(0, 0, 0);
 				if (ledcount == rled[1]) led_dl[ledcount] = CRGB(0, 0, 0);
 				zwart(ledcount, 1, 1, 1, 1, true, true);
+
 				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
 					fase = 201; 
 					periode = 50;
 					teller = 0;
 					st = random(2, 4);
 				}
+				teller++;
+				if (teller > 10) {
+					FastLED.show();
+					teller = 0;
+				}
+
 				break;
 			case 201:
 				//naar nacht
