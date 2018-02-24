@@ -13,7 +13,6 @@
 #include <FastLED.h>
 #include <eeprom.h>
 
-
 //#define LQ 64 //aantal leds in ledstring
 #define LPdl 8 //pin waar de daglicht ledstring op komt
 #define LPvl 7 //pin voor verlichting string
