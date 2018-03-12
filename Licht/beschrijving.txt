@@ -10,3 +10,14 @@ Variabel DEK_monitor toont DCC monitor (true)
 Modeltijd klok mt_min en mt_hr, minuten en uren. na 24 uur reset volgende dag.
 Periode voorlopig ingesteld op constante tday
 Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichting pin6-events
+
+byte PRG_reg[32]; 
+//bit0 active(true) 
+//bit1=initialised (true) gebruik in traffic en flashlight, voor initiele start
+//bit2=Time switched true = yes false=no
+//bit7-bit4 exclusive for program
+
+Programnummers
+2=dl daglicht prg_dl
+3=dld direct handmatig dag nacht prg_dld
+4=lightning prg_lightning 
