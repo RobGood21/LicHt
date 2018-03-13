@@ -24,10 +24,15 @@
 //nu instelling voor demo
 byte led_OW=8; //oost-west aantal leds
 byte led_NZ=30; //noord-zuid aantal leds
+byte al; //aantal leds
 
 CRGB led_dl[240];
 CRGB led_vl[32];
 CRGB led_ev[16];
+//tbv van prg_lightning
+CRGB led_lgt[12]; //max aantal leds voor bliksem, dit dient  als geheugen voor de 'oude'waarde van de led
+byte lgt_count; //aantal leds gebruikt voor bliksem
+
 
 byte led_vlap[32]; //vlap=verlichting assign program, assign a program to a led
 byte led_evap[16];//evap=event assign program
@@ -37,6 +42,8 @@ int COM_DCCAdres=64;
 byte COM_reg; 
 //bit0 test PRG active(true)
 //bit1 ledstrips direction N>Z>N>Z>N>Z>N enz (true) or N>Z N>Z N>Z N>Z enz (false, standard)
+
+//bit2 lightning effect NZ=false OW=true, orientatie, de richting van bliksem effect (NOg niet zeker 13mrt2018)
 
 //bit3 day or night (also manual) false=day, true = night
 //bit4 sunset and sunrise without effects true, false = with effects
@@ -127,11 +134,16 @@ void setup() {
 	mt_min = 1;
 
 	randomSeed(analogRead(0));
-
-
 	VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
 	//VL_adresmin = DL_adresmin + 64;
 	//EV_adresmin = VL_adresmin + 64;
+
+	
+	al = led_NZ * led_OW - 1; //al=aantal leds
+	lgt_count = al * 5/ 100; //% van leds als lightning
+	//if (led_OW > led_NZ)COM_reg |= (1 << 2); //richting van lightning effect
+
+
 
 	//FastLED.setMaxPowerInVoltsAndMilliamps(5, 8000);	
 	//FastLED.setBrightness (255); //beter niet
@@ -826,7 +838,7 @@ void PRG_dl(byte pn) {
 	static byte fase = 0; 
 	static byte nextfase = 0;
 
-	static byte al = 0; //al=aantal leds
+	//static byte al = 0; //al=aantal leds
 	
 	if (bitRead(PRG_reg[pn], 7) == true){ 
 		//if true day/night is switched
@@ -852,7 +864,7 @@ void PRG_dl(byte pn) {
 //*****************************switch fase
 			switch (fase){
 			case 0: 
-				al = led_NZ*led_OW - 1; //al=aantal leds
+				
 
 				if (bitRead(COM_reg, 3) == false) { //sunrise
 
@@ -1315,12 +1327,106 @@ void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop,boolean n
 	
 }
 void PRG_lightning() { //Programnummer=4
-	if (bitRead(PRG_reg[4], 0) == true) {
-		PRG_reg[4] &= ~(1 << 0);
-		Serial.println("lightning ingeschakeld");
+	static byte lgt_led;
+	static byte lgtfase;
+	static unsigned long time; 
+	static unsigned int interval;
+	static byte atl; //aantal flitsen achter elkaar 
+	static byte afl; //aantal leds in de bliksemflits
+	static byte br; //helderheid
+	static byte minute;
+	static byte mc=0;
+	static byte mcc = 0;
+	static unsigned int duur; //hoelang moet het onweren
+	static unsigned int it=0; //intensiteit van onweer
+	
+	if (minute != mt_min) {
+		mc++;
+		minute = mt_min;
+		
+		if (mc - mcc > 20) {
+			mcc = mc;
+			if (it > 2000) { //intensiveerd de bliksem. 
+				it = it - 1000;
+			}
+			else {
+				it = it + 1500;
+			}			
+		}
+
+		Serial.println(mc);
+		
 	}
+	
 
 
+	if (bitRead(PRG_reg[4], 1) == false) { //init start from prg_dl
+		PRG_reg[4] |= (1 << 1);
+		PRG_reg[4] |= (1 << 0);//starten via PRG_reg of modeltijd....
+		//start led bepalen
+			
+		lgtfase = 0;
+		time=millis();
+		interval = 0;
+		mc = 0;
+		duur = random(120,300); //hoe lang het moet onweren
+		it = random(6000, 12000);
+
+	}
+	else { //program verloop
+		if (millis() - interval > time) {
+
+			switch (lgtfase) {
+			case 0: //start
+				afl =  random(2, lgt_count);
+				lgt_led = random(0, al - afl);//bepaal startled in hemel	
+				interval = random(100, it);
+				atl = random(1, 5);
+				lgtfase = 10;
+				//ft = 2000; // random(50, 5000);
+				br = random(20, 200);
+				break;
+
+			case 10:
+				for (int i = 0; i < afl; i++) {
+					led_lgt[i] = led_dl[lgt_led + i]; //huidige waarde van led in geheugen stoppen
+					led_dl[lgt_led + i] = CRGB(br, br, br);
+				}
+				interval = random(10, 150);//stoptijd instellen
+				lgtfase = 20;
+				FastLED.show();
+				break;
+
+			case 20:
+				for (int i = 0; i < afl; i++) {
+					led_dl[lgt_led + i]=led_lgt[i]; //waarde led herstellen			
+				}
+				atl--;
+				if (atl > 0) {
+					interval = random(10, 50);
+					lgtfase = 10;
+					}
+					else {
+						if (mc > duur) {
+							//stop prg_lightning
+							PRG_reg[4] &= ~((1 << 0));
+							PRG_reg[4] &= ~((1 << 1));
+							PRG_reg[4] &= ~((1 << 2)); //disable modeltijd start
+						}
+						else {
+							lgtfase = 0;
+						}
+					}
+					FastLED.show();
+				break;
+			}
+		time = millis();
+		}
+	}
+	//if (bitRead(PRG_reg[4], 0) == true) {
+	//	PRG_reg[4] &= ~(1 << 0);
+	//	Serial.println("lightning ingeschakeld");
+	//}
 }
 void PRG_dld(byte pn) {
 	//switches between day and night without sunrise or sunset		
