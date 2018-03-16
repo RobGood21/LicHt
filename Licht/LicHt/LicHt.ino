@@ -28,13 +28,13 @@ byte al; //aantal leds
 
 CRGB led_dl[240];
 CRGB led_vl[32];
-CRGB led_ev[16];
+//CRGB led_ev[16];
 //tbv van prg_lightning
 CRGB led_lgt[12]; //max aantal leds voor bliksem, dit dient  als geheugen voor de 'oude'waarde van de led
 byte lgt_count; //aantal leds gebruikt voor bliksem
 
 byte led_vlap[32]; //vlap=verlichting assign program, assign a program to a led
-byte led_evap[16];//evap=event assign program
+//byte led_evap[16];//evap=event assign program
 
 //Declaraties
 int COM_DCCAdres=64;
@@ -79,8 +79,6 @@ byte mt_zononder = 21;
 
 int DL_adresmin;
 int VL_adresmin;
-int EV_adresmin;
-
 
 volatile unsigned long DEK_Tperiode; //laatst gemeten tijd 
 volatile unsigned int DEK_duur; //gemeten duur van periode tussen twee interupts
@@ -157,12 +155,11 @@ void setup() {
 	//Set register 
 	COM_reg &= ~(1 << 1); //clear bit1, separate ledstrips of layout width.
 	//COM_reg |= (1 << 1); //set bit 1 ledstrip as 1 pcs folded over the layout.
-
 	mt = (tday * 1000) / 24;
-	setup_leds();
+	MEM_read();
 	if (DEK_Monitor==true) Opening();
 }
-void setup_leds() {
+void MEM_read() {
 	/*
 	assigns a program outpu number to a led, default is preprogrammed. 
 	Programs can have multiple outputs
@@ -184,18 +181,18 @@ void setup_leds() {
 	led_vlap[1] = 2;
 
 	//programs DL
-	//PRG_Flashlight			11						ev2; ev6
+
 
 	//check EEprom for modyfied entry
-	for (int i = 0; i < 64; i++) {
-		//if (EEPROM.read(i) < 0xFF) led_dlap[i] = EEPROM.read(i);
+
+
+
+	for (int i = 1; i < 33; i++) {
+		if (EEPROM.read(i) < 0xFF) led_vlap[i-32] = EEPROM.read(i);
 	}
-	for (int i = 64; i < 128; i++) {
-		if (EEPROM.read(i) < 0xFF) led_vlap[i-64] = EEPROM.read(i);
-	}
-	for (int i = 128; i < 192; i++) {
-		if (EEPROM.read(i) < 0xFF) led_evap[i - 128] = EEPROM.read(i);
-	}
+	//for (int i = 128; i < 192; i++) {
+		//if (EEPROM.read(i) < 0xFF) led_evap[i - 128] = EEPROM.read(i);
+	//}
 }
 void Opening() {	
 	
@@ -221,9 +218,6 @@ void Opening() {
 	Serial.print(" tot en met ");
 	Serial.println(VL_adresmin+63);
 	Serial.print("adressen gebeurtenissen leds van ");
-	Serial.print(EV_adresmin);
-	Serial.print(" tot en met ");
-	Serial.println(EV_adresmin+63);
 	Serial.println("");
 	Serial.print("Dag, 24uur in modeltijd duurt ");
 	Serial.print(tday);
@@ -418,10 +412,9 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 			cv = 0;
 			value = 0;
 		}
-		COM_exe(bitRead(DEK_BufReg[n], 0), decoder, channel, port, onoff, cv, value);
+		COM_dek(bitRead(DEK_BufReg[n], 0), decoder, channel, port, onoff, cv, value);
 
-		//clear buffer
-	
+		//clear buffer	
 		DEK_BufReg[n] = 0;
 		DEK_Buf0[n] = 0;
 		DEK_Buf1[n] = 0;
@@ -433,15 +426,15 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 	n++;
 	if (n > 12)n = 0;
 }
-void COM_resetEEprom(int start) {
+void MEM_reset(int start,int aantal) {
 	//resets EEprom to 0xFF from start to start+64
 	//Reloads led assign to predifined values
-	for (int i = start; i < start+64; i++) {
+	for (int i = start; i < start + aantal; i++) {
 		if (EEPROM.read(i) < 0xFF)EEPROM.write(i, 0xFF);
-		setup_leds();
+		MEM_read();
 	}
 }
-void COM_exe(boolean type, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
+void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//type=CV(true) or switch(false)
 	//decoder basic adres of decoder 
 	//channel assigned one of the 4 channels of the decoder (1-4)
@@ -454,9 +447,8 @@ void COM_exe(boolean type, int decoder, int channel, boolean port, boolean onoff
 	//Applications 
 	if (DEK_Monitor==true) APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_COM(type, adres, decoder, channel, port, onoff, cv, value);
-	APP_DL(type, adres, decoder, channel, port, onoff, cv, value);
+	//APP_DL(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
-	APP_EV(type, adres, decoder, channel, port, onoff, cv, value);
 }
 void COM_Clk() {	
 	if (millis() - Clk > mt) { //1 minute in modelrailroad time
@@ -464,8 +456,12 @@ void COM_Clk() {
 			//minium timing is an hour modelroad time, faster events will be done on real time
 		Clk = millis();
 		mt_min ++;
-		
-		PINB |=(1 << 3); // toggle led on pin 11, toont of de clock loopt....
+		if (bitRead(PRG_reg[2], 2) == true) {
+			PINB |= (1 << 3); // toggle led on pin 11, toont dag nacht automatisch
+		}
+		else {
+			if (bitRead(PORTB,3)==true) PORTB &= ~(1 << 3);
+		}
 		
 		if (mt_min > 60) {
 			mt_min = 1;
@@ -475,7 +471,6 @@ void COM_Clk() {
 
 			if (mt_hr > 23) {
 				mt_hr = 0;
-
 			}
 		}
 	}
@@ -564,7 +559,6 @@ void COM_ps(int pn) { //ps=program switch
 		PRG_lightning();
 		break;
 	case 11:
-		//PRG_flashlight(pn);
 		break;
 	case 12:
 		PRG_traffic(pn);
@@ -594,32 +588,7 @@ void COM_switch() {
 				if (count > 40 & dld==false ) { //button hold > 2 seconds
 					//Serial.println("lang ingedrukt");
 					dld = true;
-					COM_reg ^= (1 << 3); //bit3 false = day, true is night		
-
-					PRG_reg[3] |= (1 << 0);//start program 3	
-
-					//PRG_reg[3] |= (1 << 1); 
-
-
-					PRG_reg[2] &= ~(1 << 0); //Stop program 2, 
-					PRG_reg[3] |= (1 << 7); //flag program 3 changed
-					PRG_reg[2] &= ~(1 << 2); //disable modeltime start				
-					
-					if (bitRead(COM_reg, 3) == false) {
-						PORTB |= (1 << 5);
-						PORTB &= ~(1 << 4);
-						PRG_reg[4] &= ~(1 << 0);
-						PRG_reg[4] &= ~(1 << 1);
-						PRG_reg[4] &= ~(1 << 2);
-
-					}
-					else {
-						PORTB |= (1 << 4);
-						PORTB &= ~(1 << 5);
-
-						//om onweer uit te schakelen via DCC hier nog een if voor het COM_reg bit
-						PRG_reg[4] |= (1 << 0);//lightning starten? alleen tijdens onwikkeling
-					}
+					dndirect(0);
 				}
 			}
 		}
@@ -681,59 +650,78 @@ void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port
 	Serial.println("");
 }
 void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
-	//Basis instellingen van de decoder
+	//Functies decoder op Mainadres
+	//port 1=dagnacht met  zonsopgang en ondergang effecten, start automatisch dagnacht programma, dynamisch
+	//port 2 = dag/nacht zonder effecten, stopt automatische dag/nacht, statisch
+	//port 3 ?
+	//port 4 ?
 
 	if (decoder==COM_DCCAdres) {
-		if (type == false) { //switch
+		if (type == false) { 
+			switch (channel) {
+			case 1:
+				if (port == true) {
+					COM_reg &= ~(1 << 3);					
+				}
+				else {
+					COM_reg |= (1 << 3);
+				}
+				PRG_reg[2] |= (1 << 0); //start PRG_dl
+				PRG_reg[2] |= (1 << 7); //Set changed flag
+				
+				break;
+
+			case 2:
+				if (bitRead(PRG_reg[3], 0) == false) { //only when program is in-active
+					if (port == true) {
+						dndirect(1);
+						Serial.println("aan");
+					}
+					else {
+						Serial.println("uit");
+						dndirect(2);
+					}
+				}
+
+				
+				break;
+
+			case 3:
+				break;
+			case 4:
+				break;
+			}
+
 
 		}
 		else { //CV
 //Serial.println(decoder);
 			switch (cv) {
-			case 8: //request reset eeprom
+			case 8: // reset eeprom
 				switch (value) {
-				case 10: //reset EEprom 0-63
-					COM_resetEEprom(0);
+				case 10: //reset EEprom totaal, systeem reset factory reset
+					MEM_reset(0,EEPROM.length());
 					break;
-				case 20://reset EEprom 64-127
-					COM_resetEEprom(64);
-					break;
-				case 30: //reset EEprom 128-191
-					COM_resetEEprom(128);
-					break;
+				case 20:
+
+					break;				
 				}
 				break;
 			}
 		}
 	}
 }
-void APP_DL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
-//Daglicht 64leds
-	if (adres >= DL_adresmin & adres <= DL_adresmin+63) {
-		if (port == true) {
-			PORTB |= (1 << 4);
-			led_dl[adres-DL_adresmin]= 0xCC2222; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
-		}
-		else {
-			PORTB &= ~(1 << 4);
-			led_dl[adres - DL_adresmin] = 0x000000;			
-		}
-		FastLED.show();	
-	}
-}
 void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
-	//Verlichting 64leds
+	//Verlichting 32leds
 
 	//******AANTALLEN en adressen aanpassen straks....
 	int dec;
-	if (adres >= VL_adresmin & adres <= VL_adresmin+63) {
+	if (adres >= VL_adresmin & adres <= VL_adresmin+32) {
 		if (type == false) {//switch
 			if (port == true) {
-				PORTB |= (1 << 5);
 				led_vl[adres - VL_adresmin] = 0xAAAAAA; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
 			}
 			else {
-				PORTB &= ~(1 << 5);
 				led_vl[adres - VL_adresmin] = 0x000000;
 			}
 			FastLED.show();
@@ -741,46 +729,29 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 		else {//CV
 		dec = 4*(decoder - (COM_DCCAdres)-17); //geeft led volgorde van led op channel 00 van deze (sub)decoder		
 		//Serial.println(dec);
-		switch (cv) { //adres is altijd hier het adres van de decoder. Niet van het channel
-		case 10:
-			dec = dec + 0;
-			led_vlap[dec] = value;
-			EEPROM.write(dec + 64, value);
-			break;
-		case 11:
-			dec = dec + 1;
-			led_vlap[dec] = value;
-			EEPROM.write(dec + 64, value);
-			break;
-		case 12:
-			dec = dec + 2;
-			led_vlap[dec] = value;
-			EEPROM.write(dec + 64, value);
-			break;
-		case 13:
-			dec = dec + 3;
-			led_vlap[dec] = value;
-			EEPROM.write(dec + 64, value);
-			break;
+			switch (cv) { //adres is altijd hier het adres van de decoder. Niet van het channel
+			case 10:
+				dec = dec + 0;
+				led_vlap[dec] = value;
+				EEPROM.write(dec + 32, value);
+				break;
+			case 11:
+				dec = dec + 1;
+				led_vlap[dec] = value;
+				EEPROM.write(dec + 32, value);
+				break;
+			case 12:
+				dec = dec + 2;
+				led_vlap[dec] = value;
+				EEPROM.write(dec + 32, value);
+				break;
+			case 13:
+				dec = dec + 3;
+				led_vlap[dec] = value;
+				EEPROM.write(dec + 32, value);
+				break;
+			}
 		}
-
-		}
-	}
-}
-void APP_EV(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
-	//Events 64leds
-	//******AANTALLEN en adressen aanpassen straks....
-
-	if (adres >= EV_adresmin & adres <= EV_adresmin+63) {
-		if (port == true) {
-			PORTB |= (1 << 5);
-			led_ev[adres - EV_adresmin] = 0xFFFFFF; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
-		}
-		else {
-			PORTB &= ~(1 << 5);
-			led_ev[adres - EV_adresmin] = 0x000000;
-		}
-		FastLED.show();
 	}
 }
 void LED_set(byte group,byte output, byte r,byte g,byte b) { 
@@ -844,6 +815,7 @@ void PRG_dl(byte pn) {
 		ledcount = 0;
 		fase = 0;
 		periode = 1;
+		PRG_reg[pn] &= ~(1 << 2); //disable modeltijd start
 
 		if (bitRead(COM_reg, 3) == false) {
 			PORTB |= (1 << 5);
@@ -1318,6 +1290,41 @@ void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop,boolean n
 
 	
 }
+void dndirect(byte st) { //=dag/nacht 0=toggle 1=day 2=night
+
+		switch (st) {
+		case 0:
+			COM_reg ^= (1 << 3); //bit3 false = day, true is night	
+			break;
+		case 1:
+			COM_reg &= ~(1 << 3);
+
+			break;
+		case 2:
+			COM_reg |= (1 << 3);
+			break;
+		}
+
+		PRG_reg[3] |= (1 << 0);//start program 3
+		PRG_reg[2] &= ~(1 << 0); //Stop program 2, 
+		PRG_reg[2] &= ~(1 << 2); //disable modeltime start				
+
+		if (bitRead(COM_reg, 3) == false) {
+			PORTB |= (1 << 5);
+			PORTB &= ~(1 << 4);
+			PRG_reg[4] &= ~(1 << 0);
+			PRG_reg[4] &= ~(1 << 1);
+			PRG_reg[4] &= ~(1 << 2);
+		}
+		else {
+			PORTB |= (1 << 4);
+			PORTB &= ~(1 << 5);
+
+			//om onweer uit te schakelen via DCC hier nog een if voor het COM_reg bit
+			//PRG_reg[4] |= (1 << 0);//lightning starten? alleen tijdens onwikkeling
+		}
+
+}
 void lightningstart(byte kans) { //start lightningeffect op tijd
 //kans....//	0=nooit, 1=altijd, 2=50%, 3=33%,  4=25%	
 	static byte temp;
@@ -1448,7 +1455,7 @@ void PRG_dld(byte pn) {
 	//switches between day and night without sunrise or sunset		
 	static unsigned long t = 0;
 	static byte lc=0;
-	if (millis() - t > 5) {
+	if (millis() - t > 1) {
 		t = millis();
 		if (bitRead(COM_reg, 3) == false) { //dag
 			led_dl[lc] = CRGB(250, 250, 250);
@@ -1459,105 +1466,15 @@ void PRG_dld(byte pn) {
 			led_dl[lc] = CRGB(0, 0, 0);
 			mt_hr = mt_zononder;
 			mt_min = 0;		
-
 		}
-		lc++;
-		FastLED.show();
+		lc++;		
 		if (lc > (led_NZ*led_OW) - 1) {
+			FastLED.show();
 			lc = 0;
 			PRG_reg[pn] &= ~(1 << 0); 
+			Serial.println("stop dld");
 		}
 	}
-}
-void PRG_flashlight(int pn) {//
-	/*
-voorbeeld van een PRG_ in LicHt
-knipperlicht op twee leds in vl (verlichting)
-programma geeft iedere 10 minuten na het uur, 5 minuten een knipperlicht. 
-
-declaraties voor dit PRG_
-PRG_reg[n]gebruik:
-bit7: status knipperlict welk helft is aan
-bit6: 
-bit5:
-bit4:
-
-Dit programma gebruikt 2leds
-
-doorloop verkort
--declaraties van variabelen en gebruik van de bits in PRG_reg[n] voor dit programma
--Instellen voor als arduino is gestart.
--eerste aanroep vanuit COM_ps, programma actief maken, voorwaarde voor stoppen instellen
--programma uitvoeren
--voorwaarde voor stoppen bereikt, programma stoppen en voorwaarde voor opnieuw starten instellen.
-
-*/
-	static unsigned int eindtijd; //wanneer stoppen
-	static int ft = 125; //flashtime 100ms
-	static unsigned long f = 0;
-
-	//******************initialiseren 
-	//bij eerste doorloop bit 1 in PRG_reg[n] is dan false. Geeft aan dat PRG_ nog niet is ingesteld
-	//Moet ieder programma mee beginnen.
-	//gebruikte leds bepalen.
-	
-	if (bitRead(PRG_reg[pn], 1) == false) {//init
-		PRG_reg[pn] |= (1 << 1);//set initialiseer bit
-		PRG_hr[pn] = 0; //zet uur waar programma actief moet worden
-		PRG_min[pn] = 10;//zet minuut waar program in actief moet worden.
-	}
-	else { //no init needed
-
-		//**************program actief
-		//Dus instellingen bij eerste doorloop
-		//Program is nu aangeroepen vanuit COM_ps
-		//als PTG_reg[n] bit 0 false is dan is dit de eerste keer in deze actieve cyclus
-		//nu dus actie in gang zetten
-		//diverse nog in te stellen parameters kunnen gebruikt worden om het proces te stoppen.
-		//stoppen gebeurt door dit bit weer false te maken.
-		//De ingestelde tijd hr en min zullen bij bereiken deze PRG_ weer aanroepen. 
-
-		if (bitRead(PRG_reg[pn], 0) == false) { //nog niet actief, eerste doorloop
-			PRG_reg[pn] |= (1 << 0); //maak aktief
-			eindtijd = mt_min + 5; //5 modeltijd minuten uitvoeren	
-			PRG_hr[pn] = mt_hr + 1;
-			if (PRG_hr[pn] > 24) PRG_hr[pn] = 0;
-
-		}
-		else {//actief programma
-			//eerst kijken of het weer moet stoppen
-			if (mt_min > eindtijd) {//stoppen, alles kan het stoppen veroorzaken. in dit program gewoon een 5 tal verlopen modeltijd minuten
-				//alles restten voor de volgende actieve periode
-				//ft = ft/2; //knipper periode in milliseconde
-				f = 0;
-				led_ev[2] = 0x000000; //black leds
-				led_ev[6] = 0x000000;
-				FastLED.show();
-
-				PRG_reg[pn] &= ~(1 << 0); //set non actif
-				//nieuwe starttjd instellen, minuten hoeven hier niet
-
-			}
-			else {
-
-				//*********hier het actieve deel van het programma
-				//in dit voorbeeld geval een knipperlicht.
-				if (millis() - f > ft) {
-					f = millis();
-					PRG_reg[pn] ^= (1 << 7); //gebruik bit 7 van register
-					if (bitRead(PRG_reg[pn], 7) == true) {
-						led_ev[2] = 0xAA0000;
-						led_ev[6] = 0x000000;
-					}
-					else {
-						led_ev[2] = 0x000000;
-						led_ev[6] = 0xAA0000;
-					}
-					FastLED.show();
-				}
-			}
-		} 
-	}//init
 }
 void PRG_traffic(int pn) {
 //verkeerslicht, starts and runs forever...
