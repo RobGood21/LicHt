@@ -37,15 +37,14 @@ byte led_vlap[32]; //vlap=verlichting assign program, assign a program to a led
 //byte led_evap[16];//evap=event assign program
 
 //Declaraties
-int COM_DCCAdres=64;
+byte COM_DCCAdres=64; //default waarde
 byte COM_reg; 
 //bit0 test PRG active(true)
 //bit1 ledstrips direction N>Z>N>Z>N>Z>N enz (true) or N>Z N>Z N>Z N>Z enz (false, standard)
 
-//bit2 lightning effect NZ=false OW=true, orientatie, de richting van bliksem effect (NOg niet zeker 13mrt2018)
-
 //bit3 day or night (also manual) false=day, true = night
 //bit4 sunset and sunrise without effects true, false = with effects
+//bit5 All stop, disable all prgrams for during programming true is disabled false=enabled programming mode
 
 
 byte PRG_reg[32]; 
@@ -156,6 +155,10 @@ void setup() {
 	COM_reg &= ~(1 << 1); //clear bit1, separate ledstrips of layout width.
 	//COM_reg |= (1 << 1); //set bit 1 ledstrip as 1 pcs folded over the layout.
 	mt = (tday * 1000) / 24;
+
+	//EEPROM.write(0, 0xFF);
+
+
 	MEM_read();
 	if (DEK_Monitor==true) Opening();
 }
@@ -180,19 +183,20 @@ void MEM_read() {
 	led_vlap[0] = 1;
 	led_vlap[1] = 2;
 
-	//programs DL
-
-
-	//check EEprom for modyfied entry
-
-
-
+	//eeprom byte 0 = dcc main adress
+	if (EEPROM.read(0) != 0xFF) COM_DCCAdres = EEPROM.read(0);
+	
 	for (int i = 1; i < 33; i++) {
 		if (EEPROM.read(i) < 0xFF) led_vlap[i-32] = EEPROM.read(i);
 	}
-	//for (int i = 128; i < 192; i++) {
-		//if (EEPROM.read(i) < 0xFF) led_evap[i - 128] = EEPROM.read(i);
-	//}
+}
+void MEM_reset(int start,int aantal) {
+	//resets EEprom to 0xFF from start to start+64
+	//Reloads led assign to predifined values
+	for (int i = start; i < start + aantal; i++) {
+		if (EEPROM.read(i) < 0xFF)EEPROM.write(i, 0xFF);
+		MEM_read();
+	}
 }
 void Opening() {	
 	
@@ -426,14 +430,7 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 	n++;
 	if (n > 12)n = 0;
 }
-void MEM_reset(int start,int aantal) {
-	//resets EEprom to 0xFF from start to start+64
-	//Reloads led assign to predifined values
-	for (int i = start; i < start + aantal; i++) {
-		if (EEPROM.read(i) < 0xFF)EEPROM.write(i, 0xFF);
-		MEM_read();
-	}
-}
+
 void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//type=CV(true) or switch(false)
 	//decoder basic adres of decoder 
@@ -451,7 +448,7 @@ void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
 }
 void COM_Clk() {	
-	if (millis() - Clk > mt) { //1 minute in modelrailroad time
+	if (millis() - Clk > mt & bitRead(COM_reg,5)==false) { //1 minute in modelrailroad time
 			//modelroad time. 1 day standard 24 minutes. (can be updated by CV, DCC or calculation faster of slower)
 			//minium timing is an hour modelroad time, faster events will be done on real time
 		Clk = millis();
@@ -548,36 +545,76 @@ void COM_ps(int pn) { //ps=program switch
 	//total, max 64 programs
 	//1-10 daylight and weather 11/30 lighting houses and streetlights  31 > no idea yet
 	//Serial.println(bitRead(PRG_reg[3], 0));
-	switch (pn) {
-	case 2: //schakel daglicht in of uit
-		PRG_dl(pn);
-		break;
-	case 3:
-		PRG_dld(pn);
-		break;
-	case 4:
-		PRG_lightning();
-		break;
-	case 11:
-		break;
-	case 12:
-		PRG_traffic(pn);
-		break;
 
-	default:
-		//all not defined programs// do nothing
-		break;
+	if (bitRead(COM_reg, 5) == false) {	//enable normal mode
+
+		switch (pn) {
+		case 2: //schakel daglicht in of uit
+			PRG_dl(pn);
+			break;
+		case 3:
+			PRG_dld(pn);
+			break;
+		case 4:
+			PRG_lightning();
+			break;
+		case 11:
+			break;
+		case 12:
+			PRG_traffic(pn);
+			break;
+
+		default:
+			//all not defined programs// do nothing
+			break;
+		}
 	}
 }
 void COM_switch() {
 	//handles the manual switches in the project
 	static long Sw_time = 0;
 	static unsigned int count = 0;
+	static unsigned int pc = 0; //program count
 	static boolean dld = 0;
 	if (millis() - Sw_time >50) { //every xxms
 		Sw_time = millis(); //reset counter
-		//test switch A0 dag/nacht
+		//prgram switch op A1
 
+		//tbv leds blinking in programmode, waiting for DCC adres
+		if (bitRead(COM_reg, 5) == true)LED_program();
+
+		if (bitRead(PINC, 1) == false) { //switch A1 pressed	
+			if (bitRead(SW_reg, 1) == false) {
+				SW_reg |= (1 << 1);
+				
+				if (bitRead(COM_reg, 5) == true) {
+					COM_reg &=~(1 << 5);
+					LED_off();
+				}
+			}
+			else {
+				pc++;
+				if (pc > 40 & bitRead(COM_reg,5)==false) { //> 2 seconds
+					COM_reg |= (1 << 5); //disable all programs
+					LED_off();
+					//pc = 0;
+				}
+
+				if (pc > 250) {
+					COM_reg &= ~(1 << 5);
+					LED_off();
+					pc = 0;
+					Serial.println("factory reset");
+					MEM_reset(0,EEPROM.length());
+				}
+
+			}
+		}
+		else { //switch A1 not pressed
+			SW_reg &= ~(1 << 1);	
+			pc = 0;
+		}
+		//test switch A0 dag/nacht
 		if (bitRead(PINC, 0) == false) { //switch A0 pressed			
 			if (bitRead(SW_reg, 0) == false) {
 					SW_reg |= (1 << 0); //set switchstate
@@ -656,9 +693,19 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 	//port 3 ?
 	//port 4 ?
 
+	//programming mainadres
+	if (bitRead(COM_reg, 5) == true) { //waiting for DCCadress
+		COM_DCCAdres = decoder;
+		EEPROM.write(0, decoder);
+		LED_off();
+		COM_reg &= ~(1 << 5);
+	}
+
 	if (decoder==COM_DCCAdres) {
 		if (type == false) { 
+
 			switch (channel) {
+
 			case 1:
 				if (port == true) {
 					COM_reg &= ~(1 << 3);					
@@ -666,6 +713,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 				else {
 					COM_reg |= (1 << 3);
 				}
+
 				PRG_reg[2] |= (1 << 0); //start PRG_dl
 				PRG_reg[2] |= (1 << 7); //Set changed flag
 				
@@ -775,6 +823,45 @@ FastLED.show();
 		break;
 	case 2:
 		break;
+	}
+}
+void LED_program() {
+	static byte s=0;
+	LED_off();
+		switch (s) {
+			case 0:
+				PORTB |= (1 << 5);
+				s = 1;
+				break;
+
+			case 1:
+				PORTB |= (1 << 4);
+				s = 2;
+				break;
+
+			case 2:
+				PORTB |=(1 << 3);
+				s = 0;
+				break;
+		}
+}
+void LED_off() {
+	//switches all indicator leds off
+	PORTB &= ~(1 << 5);
+	PORTB &= ~(1 << 4);
+	PORTB &= ~(1 << 3);
+
+	if (bitRead(COM_reg, 5) == false) {
+
+		switch (COM_reg, 3) {
+		case true:
+			PORTB |= (1 << 4);
+			break;
+		default:
+			PORTB |= (1 << 5);
+			break;
+		}
+
 	}
 }
 void PRG_dl(byte pn) {	
@@ -1291,20 +1378,17 @@ void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop,boolean n
 	
 }
 void dndirect(byte st) { //=dag/nacht 0=toggle 1=day 2=night
-
 		switch (st) {
 		case 0:
 			COM_reg ^= (1 << 3); //bit3 false = day, true is night	
 			break;
 		case 1:
 			COM_reg &= ~(1 << 3);
-
 			break;
 		case 2:
 			COM_reg |= (1 << 3);
 			break;
 		}
-
 		PRG_reg[3] |= (1 << 0);//start program 3
 		PRG_reg[2] &= ~(1 << 0); //Stop program 2, 
 		PRG_reg[2] &= ~(1 << 2); //disable modeltime start				
