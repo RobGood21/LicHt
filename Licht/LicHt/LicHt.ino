@@ -20,11 +20,9 @@
 
 #define ledtype WS2812
 
-//variables for matrix daglicht, assignable by CV
-//nu instelling voor demo
-byte led_OW=8; //oost-west aantal leds
-byte led_NZ=30; //noord-zuid aantal leds
-byte al; //aantal leds
+byte led_OW=8; //oost-west aantal leds en default waarde
+byte led_NZ=30; //noord-zuid aantal leds en default waarde
+byte al; //aantal leds max 240
 
 CRGB led_dl[240];
 CRGB led_vl[32];
@@ -96,19 +94,16 @@ byte DEK_Buf4[12];
 byte DEK_Buf5[12];
 
 void setup() {
-
 	//test mode
 	delay(350);
 	Serial.begin(9600);
-
-
+	
 	DDRB |= (1 << 5);	//pin13
 	DDRB |= (1 << 4);  //Pin12 als output
 	DDRB |= (1 << 3); //PIN11 as output
 
 	DDRC &= ~(1 << 0); //set PINA0 as input
 	DDRC &= ~(1 << 1); //set PINA1 as input
-
 
 	Clk = millis();
 
@@ -129,16 +124,6 @@ void setup() {
 	mt_min = 1;
 
 	randomSeed(analogRead(0));
-	VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
-	//VL_adresmin = DL_adresmin + 64;
-	//EV_adresmin = VL_adresmin + 64;
-
-	
-	al = led_NZ * led_OW - 1; //al=aantal leds
-	lgt_count = al * 5/ 100; //% van leds als lightning
-	//if (led_OW > led_NZ)COM_reg |= (1 << 2); //richting van lightning effect
-
-
 
 	//FastLED.setMaxPowerInVoltsAndMilliamps(5, 8000);	
 	//FastLED.setBrightness (255); //beter niet
@@ -156,13 +141,18 @@ void setup() {
 	//COM_reg |= (1 << 1); //set bit 1 ledstrip as 1 pcs folded over the layout.
 	mt = (tday * 1000) / 24;
 
-	//EEPROM.write(0, 0xFF);
-
-
 	MEM_read();
 	if (DEK_Monitor==true) Opening();
 }
 void MEM_read() {
+	//merk op volgorde van variable instellen is belangrijk, eerst COM_DCCadres en COM_DCCadres instellingen
+	if (EEPROM.read(0) != 0xFF) COM_DCCAdres = EEPROM.read(0);
+	//aantal leds #500 en #501
+	if (EEPROM.read(500) != 0xFF) led_NZ = EEPROM.read(500);
+	if (EEPROM.read(501) != 0xFF) led_OW = EEPROM.read(501);
+	al = led_NZ * led_OW - 1; //al=aantal leds
+	lgt_count = al * 5 / 100; //% van leds als lightning
+
 	/*
 	assigns a program outpu number to a led, default is preprogrammed. 
 	Programs can have multiple outputs
@@ -182,9 +172,8 @@ void MEM_read() {
 	//PRG_traffic			12					1,2						vl0; vl1
 	led_vlap[0] = 1;
 	led_vlap[1] = 2;
-
-	//eeprom byte 0 = dcc main adress
-	if (EEPROM.read(0) != 0xFF) COM_DCCAdres = EEPROM.read(0);
+	
+	VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
 	
 	for (int i = 1; i < 33; i++) {
 		if (EEPROM.read(i) < 0xFF) led_vlap[i-32] = EEPROM.read(i);
@@ -699,6 +688,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 		EEPROM.write(0, decoder);
 		LED_off();
 		COM_reg &= ~(1 << 5);
+		MEM_read();
 	}
 
 	if (decoder==COM_DCCAdres) {
@@ -745,14 +735,28 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 		else { //CV
 //Serial.println(decoder);
 			switch (cv) {
-			case 8: // reset eeprom
+			case 2: // reset eeprom
 				switch (value) {
-				case 10: //reset EEprom totaal, systeem reset factory reset
+					case 10: //reset EEprom totaal, systeem reset factory reset
 					MEM_reset(0,EEPROM.length());
-					break;
-				case 20:
+					MEM_read();
+					break;			
+				}
+				break;
 
-					break;				
+			case 10: //instellen aantal leds NZ #500
+				if (value*led_OW <= 240 & EEPROM.read(500) != value) {
+					EEPROM.write(500, value);
+					Serial.println("nu opslaan NZ");
+					MEM_read();
+				}
+					
+				break;
+			case 11: //instellen aantal Leds OW #501
+				if (value*led_NZ <= 240 & EEPROM.read(501) != value) {
+					EEPROM.write(501, value);
+					Serial.println("nu opslaan OW");
+					MEM_read();
 				}
 				break;
 			}
@@ -892,7 +896,7 @@ void PRG_dl(byte pn) {
 	static byte st = 0; //shift overgeslagen leds statisch
 
 	static long t = 0;
-	static byte periode = 1;
+	static unsigned int periode = 240 / al;
 	static byte fase = 0; 
 	static byte nextfase = 0;
 	
@@ -901,7 +905,7 @@ void PRG_dl(byte pn) {
 		teller = 0;
 		ledcount = 0;
 		fase = 0;
-		periode = 1;
+		periode = 240/al;
 		PRG_reg[pn] &= ~(1 << 2); //disable modeltijd start
 
 		if (bitRead(COM_reg, 3) == false) {
@@ -935,7 +939,7 @@ void PRG_dl(byte pn) {
 					switch(weer) {
 					case 1: //zonnig
 						fase = 10;
-						periode = 1;
+						periode = 240/al;
 						st = random(1, 5+1); //aantal leds wat wordt overgeslagen. 
 						fxb = random(led_NZ, al * 7/10);
 						break;
@@ -956,7 +960,7 @@ void PRG_dl(byte pn) {
 						else { //no effect
 							maxclr[0] = 240; maxclr[1] = 240; maxclr[2] = 240;
 						}						
-						periode=1;
+						periode=240/al;
 						teller = 0;
 						break;
 					}
@@ -983,7 +987,7 @@ void PRG_dl(byte pn) {
 
 					case 3: //bewolkt geen effecten
 						fase = 140;
-						periode = 1;
+						periode = 240/al;
 						teller = 0;
 						lightningstart(2);
 						break;
@@ -1098,7 +1102,7 @@ void PRG_dl(byte pn) {
 
 				if (teller > (al/2)) { //var calc in fase 4
 					fase = 41;
-					periode = 1;
+					periode = 240/al;
 					teller = 0;
 				}
 				break;
@@ -1218,7 +1222,7 @@ void PRG_dl(byte pn) {
 				if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
 				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
 					fase = 200;
-					periode = 30;
+					periode = 30*240/al;
 				}
 				break;
 
@@ -1235,7 +1239,7 @@ void PRG_dl(byte pn) {
 
 				if ((ledcount >= al) & (bitRead(PRG_reg[pn], 6) == true)) {
 					fase = 201; 
-					periode = 50;
+					periode = 50*240/al;
 					teller = 0;
 					st = random(2, 4);
 				}
