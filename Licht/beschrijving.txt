@@ -11,11 +11,27 @@ Modeltijd klok mt_min en mt_hr, minuten en uren. na 24 uur reset volgende dag.
 Periode voorlopig ingesteld op constante tday
 Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichting pin6-events
 
-byte PRG_reg[32]; 
-//bit0 active(true) 
-//bit1=initialised (true) gebruik in traffic en flashlight, voor initiele start
-//bit2=Time switched true = yes false=no
-//bit7-bit4 exclusive for program
+//prg_reg 
+	//bit0=init 
+	//bit1=active 
+	//bit2=Start by model time
+	//bit3=free
+	//bit4=free
+	//bit5=direction row NZ =true  ZN=false
+	//bit 6 flag voor bereiken eindwaarde
+	//bit7=flag end program
+	//schakeld daglicht=program 2	
+
+COM_reg
+	//bit0 =switches between active and model time progroms in void COM_ProgramAssign() 
+	//bit1 =free
+	//bit2 =free
+	//bit3 =Dag (false) Nacht(true)
+	//bit4 =Disable all sunrise and sunset effects (true) effects enabled(false)
+	//bit5 =Enable wnormal operation (false), all stop (true)
+	//bit6 =flag for proces ready
+	//bit7 =free
+
 
 Programnummers
 2=dl daglicht prg_dl
