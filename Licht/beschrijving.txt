@@ -17,7 +17,7 @@ Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichti
 	//bit2=Start by model time
 	//bit3=free
 	//bit4=free
-	//bit5=direction row NZ =true  ZN=false
+	//bit5=used in PRG_dl
 	//bit 6 flag voor bereiken eindwaarde
 	//bit7=flag end program
 	//schakeld daglicht=program 2	
