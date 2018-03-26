@@ -1261,7 +1261,7 @@ void PRG_dl(byte pn) {
 				if (ledcount == rled[1])led_dl[ledcount] = 0x000000;
 				if (ledcount == rled[2])led_dl[ledcount] = 0x000000;
 			}
-			if ((ledcount >= led_al) & (bitRead(PRG_reg[pn], 6) == true))fase = 199; //stop
+			if ((ledcount >= led_al) & (bitRead(PRG_reg[pn], 6) == true))fase = 200; //stop
 			if (ledcount == rled[0]) led_dl[ledcount] = 0x000000;
 
 			break;
@@ -1303,11 +1303,46 @@ void PRG_dl(byte pn) {
 			}
 			break;
 
-		case 199:
-			fase = 200;
+		case 200:
+			fase = 201;
+			teller = 0;
 			break;
 
-		case 200:		
+		case 201: //reduce pixels to 20% of total pixels
+			//first count active pixels
+			zwart(ledcount, 1, 10, 10, 10, false);
+			if (led_dl[ledcount]) {
+				teller++;
+			}
+			if (ledcount >= led_al) {
+				if (teller > (led_al /4)) {
+					fase = 202;
+					teller = 0;	
+				}
+				else {
+					fase = 206;
+				}			
+			}
+			break;
+
+		case 202:
+			if (rled[0] == ledcount | rled[1]==ledcount | rled[2]==ledcount ) {
+
+				for (byte i = 0; i < 10; i++) {
+					if (led_dl[ledcount + i]) {
+						led_dl[ledcount + i] = 0x000000;
+						i = 20;
+					}
+
+					for (byte i = 0; i <10; i++) {
+						zwart(ledcount + i, 1, 1, 1, 1, false);
+					}
+				}
+			}
+			if (ledcount >= led_al)fase = 201;
+			break;
+
+		case 206:		
 			PRG_reg[2] ^= (1 << 5);
 
 			if (bitRead(PRG_reg[2], 5) == true) {			
@@ -1315,18 +1350,30 @@ void PRG_dl(byte pn) {
 				if (led_dl[ledcount].g > 1)led_dl[ledcount].g = led_dl[ledcount].g - (1 + led_dl[ledcount].g / 10);
 				if (led_dl[ledcount].b > 1)led_dl[ledcount].b = led_dl[ledcount].b - (1 + led_dl[ledcount].b / 10);			
 			}
-			if (ledcount >= led_al)	fase = 201;
-					
+
+			if (rled[0] == ledcount | rled[1] == ledcount) {
+
+				for (byte i = 0; i < 10; i++) {
+					if (led_dl[ledcount + i]) {
+						led_dl[ledcount + i] = 0x000000;
+						i = 20;
+					}
+				}
+			}
+
+
+			if (ledcount >= led_al)	fase = 208;
+			
 			sqp++;
-			if (sqp > led_al/20) {
+			if (sqp > 5) {
 				FastLED.show();
 				sqp = 0;
 			}
-			
+						
 			break;
 
 				
-			case 201: //check for reaching miniumum value
+			case 208: //check for reaching miniumum value
 				//random kill pixels
 
 				
@@ -1342,22 +1389,32 @@ void PRG_dl(byte pn) {
 							PRG_reg[2] &= ~(1 << 6);
 						}
 					}
-				}												
+				}		
+
+				if (led_dl[ledcount]) {
+					teller++;
+				}
+
 				sqp = (led_dl[ledcount].r + led_dl[ledcount].g + led_dl[ledcount].b);
 					if (sqp == 1 | sqp==2) led_dl[ledcount] = 0x010101;
 
 				if (ledcount >= led_al) {
+					if (teller > (led_al / 15)) {
+						PRG_reg[2] &= ~(1 << 6);
+						teller = 0;
+					}
+
 					if (bitRead(PRG_reg[2], 6) == true) {
 						fase = 1;// 202;
 					}
 					else {
-						fase = 200;
+						fase = 206;
+						sqp = 0;
 					}
 				}
 				break;
 
-			case 202: //reduce quantity of 'stars
-
+			case 210: //reduce quantity of 'stars
 				if (led_dl[ledcount].r == 1 ) teller++;
 
 				if (ledcount >= led_al) {
