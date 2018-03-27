@@ -421,7 +421,6 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 	n++;
 	if (n > 12)n = 0;
 }
-
 void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//type=CV(true) or switch(false)
 	//decoder basic adres of decoder 
@@ -1001,6 +1000,10 @@ void PRG_dl(byte pn) {
 					}
 					teller = 0;
 					break;
+
+				case 4:
+					fase = 50;
+					break;
 				}
 			}
 			else { //sunset
@@ -1033,7 +1036,12 @@ void PRG_dl(byte pn) {
 					teller = 0;
 					lightningstart(2);
 					break;
+				case 4:
+					fase = 150;
+					break;
 				}
+		
+
 			}
 			break;
 
@@ -1144,14 +1152,7 @@ void PRG_dl(byte pn) {
 				wit(ledcount, 6, maxclr[0], maxclr[1], maxclr[2], false);
 				FastLED.show();
 			}
-
-
-			//DIT IS NIET GOED WAT IS BIT4??? UItgezet testen weertype 2
-			//if (ledcount == rled[2] & bitRead(PRG_reg[pn], 4) == true) led_dl[ledcount] = CRGB(250, 130, 0);
-
 			if (ledcount >= led_al) teller++;
-
-
 			if (teller > (led_al * 7 / 10)) {
 				teller = 0;
 				fase = 41;
@@ -1167,9 +1168,6 @@ void PRG_dl(byte pn) {
 				}
 			}
 			break;
-
-			//***************WEER 3 niet ingevuld
-
 			//**********WEER 4
 		case 40: //weertype 4, slecht weer naar donker daglicht
 
@@ -1191,6 +1189,11 @@ void PRG_dl(byte pn) {
 			if (ledcount >= led_al & bitRead(PRG_reg[pn], 6) == true) fase = 1;
 			break;
 
+		case 50: //no effect direct full scale white
+			led_dl[ledcount] = 0xFFFFFF;
+			if (ledcount >= led_al)fase = 1;
+			break;
+
 			//******************SUNSET******SUNSET********SUNSET*******
 		case 100: //sunset	
 			fase = 110;
@@ -1209,8 +1212,7 @@ void PRG_dl(byte pn) {
 				//teller = 0;
 			}
 			break;
-
-
+			
 
 		case 112:
 			if (ledcount > fxb) {
@@ -1279,8 +1281,8 @@ void PRG_dl(byte pn) {
 
 		case 123:
 			if (ledcount >= led_al) teller++;
-			if (teller < (led_al * 2 / 10)) {
-				zwart(ledcount, 1, 5, 5, 5, false);
+			if (teller < (led_al * 4/ 10)) {
+				zwart(ledcount, 1, 15, 15, 15, false);
 				if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
 				if (ledcount == rled[2] & ledcount > fxb)led_dl[ledcount] = CRGB(90, 30, 0);
 				if (ledcount == rled[1])led_dl[ledcount] = CRGB(100, 30, 0);
@@ -1295,15 +1297,21 @@ void PRG_dl(byte pn) {
 			break;
 
 		case 141:
-			zwart(ledcount, 1, 3, 3, 3, true);
+			zwart(ledcount, 1, 30,30 , 30, true);
 			if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
 			if ((ledcount >= led_al) & (bitRead(PRG_reg[pn], 6) == true)) {
 				fase = 200;
-				//hier stond een vertraging met factuur 30
+			
 			}
 			break;
 
-		case 200:
+
+		case 150: //no effect direct black
+			led_dl[ledcount] = 0x000000;
+			if (ledcount >= led_al)fase = 1;
+			break;
+
+		case 200: //black out naar nacht
 			fase = 201;
 			teller = 0;
 			break;
@@ -1353,9 +1361,13 @@ void PRG_dl(byte pn) {
 
 			if (rled[0] == ledcount | rled[1] == ledcount) {
 
-				for (byte i = 0; i < 10; i++) {
+				for (byte i = 0; i < 10; i++) { //reduces series of remaining on pixels
 					if (led_dl[ledcount + i]) {
-						led_dl[ledcount + i] = 0x000000;
+						if (led_dl[ledcount + (i + 1)]) {
+							led_dl[ledcount + (i + 1)] = 0x000000;
+						}
+						else {led_dl[ledcount + i] = 0x000000;
+						}											
 						i = 20;
 					}
 				}
@@ -1405,7 +1417,7 @@ void PRG_dl(byte pn) {
 					}
 
 					if (bitRead(PRG_reg[2], 6) == true) {
-						fase = 1;// 202;
+						fase = 210;
 					}
 					else {
 						fase = 206;
@@ -1414,22 +1426,13 @@ void PRG_dl(byte pn) {
 				}
 				break;
 
-			case 210: //reduce quantity of 'stars
-				if (led_dl[ledcount].r == 1 ) teller++;
-
-				if (ledcount >= led_al) {
-					if (teller < led_al / 20) {
-					fase = 1;
-					}
-					else {
-						teller = 0;
-					}					
+			case 210:
+				if (led_dl[ledcount]) { 
+					if (led_dl[ledcount + 1])led_dl[ledcount+1] = 0x000000;
 				}
-
-				for (int i = 0; i < 5; i++) {
-					led_dl[ledcount + random(0,led_al)] = 0x000000;
-				}
-				break;		
+				if (ledcount >= led_al)fase = 1;
+				break;
+			
 }
 //**********************end switch fase
 		
