@@ -11,27 +11,37 @@ Modeltijd klok mt_min en mt_hr, minuten en uren. na 24 uur reset volgende dag.
 Periode voorlopig ingesteld op constante tday
 Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichting pin6-events
 
-//prg_reg 
+//prg_reg   =register booleans for programs, only runtime
 	//bit0=init 
 	//bit1=active 
 	//bit2=Start by model time
 	//bit3=free
-	//bit4=free
-	//bit5=used in PRG_dl
-	//bit 6 flag voor bereiken eindwaarde
-	//bit7=flag end program
+	//bit4==exclusive for program
+	//bit5==exclusive for program
+	//bit6=exclusive for program
+	//bit7=exclusive for program
+
 	//schakeld daglicht=program 2	
 
-COM_reg
-	//bit0 =switches between active and model time progroms in void COM_ProgramAssign() 
+COM_reg = register for common booleams only in runtime
+	//bit0 =switches between active and model time programs in void COM_ProgramAssign() 
 	//bit1 =free
 	//bit2 =free
 	//bit3 =Dag (false) Nacht(true)
-	//bit4 =Disable all sunrise and sunset effects (true) effects enabled(false)
-	//bit5 =Enable wnormal operation (false), all stop (true)
+	//bit4 =free
+	//bit5 =Enable normal operation (false), all stop (true)
 	//bit6 =flag for proces ready
 	//bit7 =free
 
+COM_set =register for general settings, stores and reads from EEPROM #400
+	//bit0 =Disable all sunrise and sunset effects (false) effects enabled(true)
+	//bit1 =free
+	//bit2 =free
+	//bit3 =free
+	//bit4 =free
+	//bit5 =free
+	//bit6 =free
+	//bit7 =free
 
 Programnummers
 2=dl daglicht prg_dl
