@@ -28,8 +28,8 @@ COM_reg = register for common booleams only in runtime
 	//bit1 =free
 	//bit2 =free
 	//bit3 =Dag (false) Nacht(true)
-	//bit4 =free
-	//bit5 =Enable normal operation (false), all stop (true)
+	//bit4 =Enable normal operation (false), all stop (true), only DCC receive possible
+	//bit5 =Enable normal oparation, waiting for DCC program main adres
 	//bit6 =flag for proces ready
 	//bit7 =free
 
