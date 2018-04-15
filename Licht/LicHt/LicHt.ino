@@ -72,12 +72,11 @@ byte mt_hr=0; //modeltimeclock hours
 //VL (verlichting) decoder 16 adresses higher
 //EV (events) decoder 16adresses higher
 
-int DL_adresmin;
+int FX_adresmin;
 int VL_adresmin;
 
 volatile unsigned long DEK_Tperiode; //laatst gemeten tijd 
 volatile unsigned int DEK_duur; //gemeten duur van periode tussen twee interupts
-boolean DEK_Monitor = false; //shows DCC monitor in serial monitor. NOTE: true will take up to 400bytes of memory, program can run out of memory and crash.
 byte DEK_Reg; //register voor de decoder 
 byte DEK_Status = 0;
 byte DEK_byteRX[6]; //max length commandoos for this decoder 6 bytes (5x data 1x error check)
@@ -121,9 +120,7 @@ void setup() {
 	DEK_Tperiode = micros();
 	EICRA |= (1 << 0);//EICRA – External Interrupt Control Register A bit0 > 1 en bit1 > 0 (any change)
 	EICRA &= ~(1 << 1);	//bitClear(EICRA, 1);
-	EIMSK |= (1 << INT0);//bitSet(EIMSK, INT0);//EIMSK – External Interrupt Mask Register bit0 INT0 > 1
-
-	if (DEK_Monitor==true) Opening();
+	EIMSK |= (1 << INT0);//bitSet(EIMSK, INT0);//EIMSK – External Interrupt Mask Register bit0 INT0 > 1	
 }
 void MEM_read() {
 	//merk op volgorde van variable instellen is belangrijk, eerst COM_DCCadres en COM_DCCadres instellingen
@@ -160,17 +157,20 @@ void MEM_read() {
 
 	//Default instelling toewijzing pixel aan programmanummer
 	//Programs VL:          program number		program outputs			assigned leds
+	//huis1					10					1						0	
 	//PRG_traffic			12					niet bepaald						niet bepaald
-	led_vlap[0] = 1;
-	led_vlap[1] = 2;
-	led_vlap[2] = 3;
-	led_vlap[3] = 4;
-	led_vlap[4] = 5;
+
+	for (int i = 0; i < 32; i++) {
+		led_vlap[i] = i + 1;
+	}
+
+
 	//geheugen toewijzing pixel aan programma nummer nu max 32 pixels
 	for (int i = 1; i < 33; i++) {
 		if (EEPROM.read(i) < 0xFF) led_vlap[i] = EEPROM.read(i);
 	}
 VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
+FX_adresmin= (COM_DCCAdres * 4) + 33; //VL has 32 adresses.
 
 }
 void MEM_reset(int start,int aantal) {
@@ -181,36 +181,7 @@ void MEM_reset(int start,int aantal) {
 	}
 MEM_read();
 }
-void Opening() {	
-	
-	Serial.println("");
-	Serial.println("");
-	Serial.println("Welkom bij LicHT");
-	Serial.println("Een wisselmotor.nl project");
-	Serial.println("-------------------");
-	Serial.println("Instellingen:");
-	Serial.print("Decoder adres: ");
-	Serial.print(COM_DCCAdres);
-	Serial.print(" (");
-	Serial.print(((COM_DCCAdres-1)*4)+1);
-	Serial.print("-");
-	Serial.print(((COM_DCCAdres - 1) * 4) + 4);
-	Serial.println(")");
-	Serial.print("adressen daglicht leds van ");
-	Serial.print(DL_adresmin);
-	Serial.print(" tot en met ");
-	Serial.println(DL_adresmin+63);
-	Serial.print("adressen verlichting leds van ");
-	Serial.print(VL_adresmin);
-	Serial.print(" tot en met ");
-	Serial.println(VL_adresmin+63);
-	Serial.print("adressen gebeurtenissen leds van ");
-	Serial.println("");
-	Serial.print("Dag, 24uur in modeltijd duurt ");
-	Serial.print(tday);
-	Serial.println(" minuten.");
 
-}
 ISR(INT0_vect) { //syntax voor een ISR
 				 //isr van PIN2
 				 //DEK_Reg fase van bit ontvangst
@@ -413,6 +384,15 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 	n++;
 	if (n > 12)n = 0;
 }
+void COM_fastled() {
+	
+	//refreshes the pixels in fastled
+	COM_reg |= (1 << 1);
+	if (DEK_Status < 2) {
+		FastLED.show(); //only when there is no DCC command being processed 
+		COM_reg &=~(1 << 1);
+	}		
+}
 void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//type=CV(true) or switch(false)
 	//decoder basic adres of decoder 
@@ -423,10 +403,9 @@ void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff
 	//cv value
 	int adres;
 	adres = ((decoder - 1) * 4) + channel;
-	//Applications 
-	if (DEK_Monitor==true) APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
+	//APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_COM(type, adres, decoder, channel, port, onoff, cv, value);
-	//APP_DL(type, adres, decoder, channel, port, onoff, cv, value);
+	APP_FX(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
 }
 void COM_Clk() {	
@@ -474,6 +453,12 @@ void COM_ProgramAssign() {
 
 			case 4:
 				//no initial start				
+				break;
+			case 6:
+				//temp always on
+				//PRG_reg[6] |= (1 << 0);
+				//no init
+
 				break;
 			case 10:
 				//program always active, no init needed
@@ -537,8 +522,11 @@ void COM_ps(int pn) { //ps=program switch
 		case 4:
 			PRG_lightning();
 			break;
+		case 6:
+			//PRG_las();
+			break;
 		case 10:
-			PRG_build();
+			//PRG_build();
 			break;
 		case 11:
 			break;
@@ -559,6 +547,8 @@ void COM_switch() {
 	static unsigned int pc = 0; //program count
 	static boolean dld = 0;
 	if (millis() - Sw_time >50) { //every xxms
+		if (bitRead(COM_reg, 1) == true)COM_fastled(); //start fastled if 
+
 		Sw_time = millis(); //reset counter
 		//prgram switch op A1
 
@@ -632,6 +622,9 @@ void COM_switch() {
 }
 void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//application for DCC monitor
+	//dit kan straks weg????? 
+
+
 	if (type == true) {
 		Serial.print("CV:   , ");
 	}
@@ -831,7 +824,7 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 
 	//******AANTALLEN en adressen aanpassen straks....
 	int pixel;
-	if (adres >= VL_adresmin & adres <= VL_adresmin+32) {
+	if (adres >= VL_adresmin & adres < VL_adresmin+32) {
 		if (type == false) {//switch
 			if (port == true) {
 				led_vl[adres - VL_adresmin] = 0xAAAAAA; //adres(DCC) minus adresmin geeft hier het led nummer in de rij.
@@ -839,7 +832,7 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 			else {
 				led_vl[adres - VL_adresmin] = 0x000000;
 			}
-			FastLED.show();
+			COM_fastled();
 		}
 		else {//CV
 			pixel = adres - VL_adresmin;
@@ -904,9 +897,30 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 					led_vlap[pixel] = value;
 					if (EEPROM.read(pixel) != value) EEPROM.write(pixel, value);
 					break;
-
 			}
-			FastLED.show();
+			COM_fastled();
+		}
+	}
+}
+void APP_FX(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
+	if (adres >= FX_adresmin & adres <= FX_adresmin + 4) {
+
+		//if (type == false) {//switch
+		switch (channel) {
+		case 1:
+			if (port == true) {
+				PRG_reg[6] |= (1 << 0);
+			}
+			else {
+				PRG_reg[6] &= ~(1 << 0);
+			}
+			break;
+		case 2:
+			break;
+		case 3:
+			break;
+		case 4:
+			break;
 		}
 	}
 }
@@ -914,13 +928,13 @@ void LED_set(byte output, byte r,byte g,byte b) {
 	for (byte i = 0; i < 32; i++) { //check all leds in this group
 			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);			
 	}
-FastLED.show();
+	COM_fastled();
 }
 void LED_go(byte prg) {
 	for (byte i = 0; i < 32; i++) { //check all leds in this group
 		if (led_vlap[i] == prg)led_vl[i] = CRGB(BLD_clr[0], BLD_clr[1],BLD_clr[2] );
 	}
-	FastLED.show();
+	COM_fastled();
 }
 void LED_program() {
 	static byte s=0;
@@ -973,7 +987,7 @@ void PRG_dl(byte pn) {
 	//bit2=Start by model time
 	//bit3=free
 	//bit4=free
-	//bit5=direction row NZ =true  ZN=false
+	//bit5=
 	//bit 6 flag voor bereiken eindwaarde
 	//bit7=flag end program
 	static byte fxb; //hoe ver het effect naar het westen
@@ -1017,7 +1031,8 @@ void PRG_dl(byte pn) {
 				switch (CV_wt) {
 					//0=random 1=sunny 2=clouded 3=miserable weather 4=no effects
 				case 0:
-					weer = random(1, 4); //0-1-2-3 (never 4)
+					//weer = random(1, 4); //0-1-2-3 (never 4)
+					weer = 1;
 					break;
 				default:
 					weer = CV_wt;
@@ -1138,7 +1153,7 @@ void PRG_dl(byte pn) {
 				}
 			}
 			if ((ledcount >= led_al) & (bitRead(PRG_reg[pn], 6) == true)) {
-				fase = 17;
+				fase = 19;
 				teller = 0;
 				maxclr[0] = 240; maxclr[1] = 240; maxclr[2] = 240;
 			}
@@ -1147,15 +1162,12 @@ void PRG_dl(byte pn) {
 			if (ledcount == rled[2] & led_dl[ledcount].r == 0)led_dl[ledcount] = CRGB(20, 20, 20);
 			if (ledcount == rled[2] + 1 & led_dl[ledcount].r == 0)led_dl[ledcount] = CRGB(20, 20, 20);
 			break;
-		case 17:
-			if (led_dl[ledcount + teller].r == 0) { //led is dan uit
-				led_dl[ledcount + teller] = 0x010101;
-			}
-			teller++;
-			if (teller >= led_al)fase = 18;
-			ledcount = led_al;
-			break;
-		case 18:
+
+			//stuk fine tuning weggehaald hier, diende om de uitleds 1 voor 1 aan te zetten, maar veroorzaakt een timing probleem
+			//ik vermoed te snel achter elkaar een fastled.show
+
+
+		case 19:
 			//white out
 			if (ledcount >= led_al) teller++;
 			switch (teller) {
@@ -1188,7 +1200,7 @@ void PRG_dl(byte pn) {
 		case 21:
 			if (ledcount == rled[0] | ledcount == rled[1]) {
 				wit(ledcount, 6, maxclr[0], maxclr[1], maxclr[2], false);
-				FastLED.show();
+				COM_fastled();
 			}
 			if (ledcount >= led_al) teller++;
 			if (teller > (led_al * 7 / 10)) {
@@ -1211,7 +1223,7 @@ void PRG_dl(byte pn) {
 
 			if (ledcount == rled[0] | ledcount == rled[1] | ledcount == rled[2]) {
 				wit(ledcount, 6, maxclr[0], maxclr[1], maxclr[2], false);
-				FastLED.show();
+				COM_fastled();
 			}
 			if (ledcount >= led_al) teller++;
 			if (teller > (led_al / 2)) { //var calc in fase 4
@@ -1362,6 +1374,7 @@ void PRG_dl(byte pn) {
 				}
 				else {
 					fase = 206;
+					Serial.println("206");
 				}			
 			}
 			break;
@@ -1384,13 +1397,13 @@ void PRG_dl(byte pn) {
 			break;
 
 		case 206:		
-			PRG_reg[2] ^= (1 << 5);
+			//PRG_reg[2] ^= (1 << 5);
 
-			if (bitRead(PRG_reg[2], 5) == true) {			
-				if (led_dl[ledcount].r > 1) led_dl[ledcount].r = led_dl[ledcount].r - (1 + led_dl[ledcount].r / 10);
-				if (led_dl[ledcount].g > 1)led_dl[ledcount].g = led_dl[ledcount].g - (1 + led_dl[ledcount].g / 10);
-				if (led_dl[ledcount].b > 1)led_dl[ledcount].b = led_dl[ledcount].b - (1 + led_dl[ledcount].b / 10);			
-			}
+			//if (bitRead(PRG_reg[2], 5) == true) {			//??????
+			if (led_dl[ledcount].r > 1) led_dl[ledcount].r--; // = led_dl[ledcount].r - (1 + led_dl[ledcount].r / 10);
+			if (led_dl[ledcount].g > 1)led_dl[ledcount].g--;// = led_dl[ledcount].g - (1 + led_dl[ledcount].g / 10);
+			if (led_dl[ledcount].b > 1)led_dl[ledcount].b--;// = led_dl[ledcount].b - (1 + led_dl[ledcount].b / 10);
+			//}
 
 			if (rled[0] == ledcount | rled[1] == ledcount) {
 
@@ -1405,17 +1418,20 @@ void PRG_dl(byte pn) {
 					}
 				}
 			}
-
-
-			if (ledcount >= led_al)	fase = 208;
-			
-			dl_sp++;
-			if (dl_sp > 5) {
-				FastLED.show();
-				dl_sp = 0;
+			if (ledcount >= led_al) {
+				fase = 207;
+				Serial.println("207");
 			}
+				
+
+			//dl_sp++;
+			//if (dl_sp > 5) {
+			//	COM_fastled();
+			//	dl_sp = 0;
+			//}
 			break;		
-			case 208: //check for reaching miniumum value
+
+			case 207: //check for reaching miniumum value
 				//random kill pixels
 								
 				if (led_dl[ledcount].r > 1) {
@@ -1430,30 +1446,38 @@ void PRG_dl(byte pn) {
 							PRG_reg[2] &= ~(1 << 6);
 						}
 					}
-				}		
 
+					dl_sp = (led_dl[ledcount].r + led_dl[ledcount].g + led_dl[ledcount].b);
+					if (dl_sp == 1 | dl_sp == 2) led_dl[ledcount] = 0x010101;
+
+				}	
+				if (ledcount >= led_al) {
+				if (bitRead(PRG_reg[2], 6) == true) {
+					fase = 210;
+				}
+				else {
+					fase = 206;
+					Serial.println("terug naar 206");
+				}
+				}
+
+				break;
+
+			case 208:
 				if (led_dl[ledcount]) {
 					teller++;
 				}
+				
 
-				dl_sp = (led_dl[ledcount].r + led_dl[ledcount].g + led_dl[ledcount].b);
-					if (dl_sp == 1 | dl_sp==2) led_dl[ledcount] = 0x010101;
 
 				if (ledcount >= led_al) {
+					Serial.println(teller);
 					if (teller > (led_al / 15)) {
 						PRG_reg[2] &= ~(1 << 6);
 						teller = 0;
 					}
-
-					if (bitRead(PRG_reg[2], 6) == true) {
-						fase = 210;
-					}
-					else {
-						fase = 206;
-						dl_sp = 0;
-					}
 				}
-				break;
+					break;
 
 			case 210:
 				if (led_dl[ledcount]) { 
@@ -1465,7 +1489,7 @@ void PRG_dl(byte pn) {
 //**********************end switch fase		
 			ledcount++;
 			if (ledcount > led_al){//merk op 1 verder als in de switch case
-				FastLED.show();
+				COM_fastled();
 				ledcount = 0;
 				PRG_reg[pn]|= (1 << 6); //flag voor bereiken eindwaarde				
 				rled[0] = random(0, led_al); 
@@ -1575,7 +1599,7 @@ void PRG_lightning() { //Programnummer=4
 				}
 				interval = random(10, 200);//stoptijd instellen
 				lgtfase = 20;
-				FastLED.show();
+				COM_fastled();
 				break;
 
 			case 20:
@@ -1599,7 +1623,7 @@ void PRG_lightning() { //Programnummer=4
 							lgtfase = 0;
 						}
 					}
-					FastLED.show();
+					COM_fastled();
 				break;
 			}
 		time = millis();
@@ -1624,7 +1648,7 @@ void PRG_dld(byte pn) {
 		}
 		lc++;		
 		if (lc > led_al) {
-			FastLED.show();
+			COM_fastled();
 			lc = 0;
 			PRG_reg[pn] &= ~(1 << 0); 
 			Serial.println("stop dld");
@@ -1699,7 +1723,22 @@ void PRG_traffic(int pn) {
 				fase = 1;
 				break;
 			}
-			//FastLED.show();
+			//COM_fastled();
+		}
+	}
+}
+void PRG_las() { //programma 6
+	//simutatie lassen
+	static byte out = 6;
+	static unsigned long t;
+	if (millis() - t > 20) {
+		t = millis();
+		PRG_reg[6] ^= (1 << 7);
+		if (bitRead(PRG_reg[6], 7) == true) {
+			LED_set(out, 0, 0, 0);
+		}
+		else {
+			LED_set(out, 255, 255, 255);
 		}
 	}
 }
@@ -1710,8 +1749,8 @@ void PRG_build() { //prg 10
 	//bit 7 = dagnacht status laatste doorloop
 	static byte bld_min;
 	static int bld_mc; //mc=minute count
-	static byte prg;
-	static byte bld_start[6]; //random 'starttijd van programma'
+	static byte bld_output;
+	static byte bld_rdm[6]; //random 'starttijd van programma'
 
 	//minuten teller, vertraagd uitvoering 1x per minuut en onderstaand wordt
 	//per modelminuut maar 1x doorlopen, bij volgende doorloop is mt_min verhoogd.
@@ -1723,19 +1762,32 @@ void PRG_build() { //prg 10
 			bld_mc = 0;
 			//calculate 6 random start numbers
 			for (int i = 0; i < 6; i++) {
-				bld_start[i] = random(0, 60);
+				bld_rdm[i] = random(0, 30);
 			}
 		}
-
+		//***************huis1
 		//check of program wordt gebruikt en lees current waarde van de leds in
-		prg = 1; //klein huis1, 1 pixel
-		build_use(prg);
+		bld_output = 1; //klein huis1, 1 pixel
+		build_use(bld_output);
 		if (bitRead(PRG_reg[10], 6) == true) {
-			build_h1(bld_mc, bld_start[0]);
-			LED_go(prg);
+			build_h1(bld_mc, bld_rdm[0]);
+			LED_go(bld_output);
 		}
+		//*******************huis 2
 
-		prg = 2; //klein huis2, 1 pixel
+		//prg = 2; //klein huis2, 1 pixel
+
+		//***************Herenhuis1
+		//tijdens ontwerp even 2e en 3e pixel (1 en 2) en output 2
+		//2 pixels, pixels apart
+		bld_output = 2; // 1e output
+		for (int i = 0; i < 2; i++) {			
+			build_use(bld_output + i);
+			if (bitRead(PRG_reg[10], 6) == true) {
+				build_hh1(bld_mc, bld_rdm[5],1+i);
+				LED_go(bld_output+i);
+			}
+		}
 	}
 }
 void build_use(byte prg) {
@@ -1753,16 +1805,16 @@ void build_use(byte prg) {
 }
 void build_h1(int mnt,int rdm) {
 	//klein huis 1 pixel output #1 r(1)=boven g(0)=beneden b(2)=wc, badkamer
-	if (bitRead(COM_reg, 3) == true) { //nacht
+	if (bitRead(COM_reg, 3) == true) { //naar nacht
 
 		switch (mnt+rdm) { //mc=minute count, verstreken tijd na wisseling dag/nacht
-		case 60:
+		case 30:
 			BLD_clr[1] = 0xFF;
 			break;
-		case 160:
+		case 80:
 			BLD_clr[2] = 0xFF;
 			break;
-		case 170:
+		case 100:
 			BLD_clr[0] = 0xFF;
 			break;
 		case 175:
@@ -1776,22 +1828,22 @@ void build_h1(int mnt,int rdm) {
 			break;
 		}
 	}
-	else { //dag
+	else { //naar dag
 		switch (mnt-rdm) {
-		case 60: //uitschakelen 
-			BLD_clr[0] = 100;
+		case 30: //uitschakelen 
+			BLD_clr[0] = 100; //beneden aan
 			break;
-		case 80:
-			BLD_clr[2] = 0xFF;
+		case 50:
+			BLD_clr[2] = 0xFF; //wc
 			break;
-		case 95:
-			BLD_clr[2] = 0;
-			break;
-		case 96:
-			BLD_clr[1] = 0xFF;
+		case 75:
+			BLD_clr[2] = 0; //wc uit
 			break;
 		case 100:
-			BLD_clr[0] = 0;
+			BLD_clr[1] = 0xFF; //slaapkamer
+			break;
+		case 110:
+			BLD_clr[0] = 0; //beneden
 			break;
 		case 120:
 			BLD_clr[1] = 0;
@@ -1799,6 +1851,113 @@ void build_h1(int mnt,int rdm) {
 		}
 	}	
 }
+
+void build_h2() {
+
+}
+void build_hh1(int mnt, int rdm,byte pix) {
+	//Middelgroothuis 2pixels output (tijdelijk) #2-#3  
+	//p1r=gang, garberobe
+	//p1g=huiskamer beneden
+	//p1b=buitenlicht
+	//p2r=zolder
+	//p2g=slaapkamer links
+	//p2b=WC badkamer
+	if (bitRead(COM_reg, 3) == true) {//naar nacht
+		switch (mnt + rdm) {
+		case 30:
+			if (pix == 1)BLD_clr[0] = 0xFF; //gang
+			break;
+		case 36:
+			if (pix == 1)BLD_clr[2] = 0xFF; //buitenlamp
+			break;			
+		case 42:
+			if (pix == 1)BLD_clr[1] = 0xFF; //huiskamer aan
+			break;
+		case 45:
+			if (pix == 1)BLD_clr[0] = 0;//gang uit
+			break;
+		case 100:
+			if (pix == 1)BLD_clr[0] = 0xFF; //gang aan
+			break;
+		case 105:
+			if (pix == 2)BLD_clr[2]= 0xFF; //WC aan
+			break;
+		case 110:
+			if (pix == 2)BLD_clr[0] = 0xFF; //Zolder aan
+			break;
+		case 115:
+			if (pix == 2)BLD_clr[2] = 0; //WC uit
+			break;
+		case 118:
+			if (pix == 1)BLD_clr[0] = 0; //gang uit
+			break;
+		case 170:
+			if (pix == 1)BLD_clr[0] = 0xFF; //gang aan
+			break;
+		case 175:
+			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
+			break;
+		case 185:
+			if (pix == 2)BLD_clr[2] = 0; //WC uit
+			break;
+		case 190:
+			if (pix == 1)BLD_clr[1] = 2; //huiskamer zwak uit
+			break;
+		case 195:
+			if (pix == 2)BLD_clr[1] = 0xFF; //slaapkamer aan
+			break;
+		case 198:
+			if (pix == 1)BLD_clr[0] = 0; //gang uit
+			break;
+		case 205:
+			if (pix == 2)BLD_clr[1] = 2; //slaapkamer zwak
+			break;
+		case 230:
+			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
+			break;
+		case 240:			
+			if (pix == 2)BLD_clr[2] = 0; //WC uit
+			break;
+		case 250:
+			if (pix == 2)BLD_clr[0] = 2; //Zolder zwak
+		case 355:
+			if (pix == 2)BLD_clr[0] = 0xFF; //zolder aan
+			break;
+		case 360:
+			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
+			break;
+		case 375:
+			if (pix == 2)BLD_clr[2] = 0; //WC uit
+			break;
+		case 380:
+			if (pix == 2)BLD_clr[0] = 2; //zolder zwak
+			break;
+		case 490:
+			if (pix == 2)BLD_clr[0] = 0xFF; //zolder aan
+			break;
+		case 500:
+			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
+			break;
+		case 520:
+			if (pix == 2)BLD_clr[2] = 0; //WC uit
+		break;
+		case 530:
+			if (pix == 2)BLD_clr[0] = 2; //zolder zwak
+			break;
+		}
+	}
+	else { //naar dag
+		switch (mnt - (rdm)) {
+		case 30:
+			break;
+		case 60:
+			if (pix == 1)BLD_clr[2] = 0;
+			break;
+		}
+	}
+}
+
 void wit(byte led, byte inc, byte mr, byte mg, byte mb,boolean stop) {
 
 	if (led_dl[led].r < mr) {
@@ -1888,8 +2047,8 @@ void lightningstart(byte kans) { //start lightningeffect op tijd
 	}
 }
 void loop() {
-	COM_Clk();
-	COM_ProgramAssign();
-	DEK_DCCh();
-	COM_switch();
+DEK_DCCh();
+COM_Clk();
+COM_ProgramAssign();
+COM_switch();
 }
