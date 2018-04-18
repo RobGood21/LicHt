@@ -36,7 +36,7 @@ byte lgt_count; //aantal leds gebruikt voor bliksem
 byte led_vlap[32]; //vlap=verlichting assign program, assign a program to a led
 //byte led_evap[16];//evap=event assign program
 
-byte BLD_clr[3]; //color of pixel in progress
+
 byte COM_reg; //bit0 test PRG active(true)
 //bit1 free
 //bit3 day or night (also manual) false=day, true = night
@@ -62,6 +62,7 @@ bit1=status switch A1 (clock/ program)
 
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
+byte prgc[2]; //program counter
 unsigned long Clk;
 unsigned int mt; //modeltime minute
 byte mt_min=1; //modeltimeclock minutes 
@@ -160,6 +161,7 @@ void MEM_read() {
 	//huis1					10					1						0	
 	//PRG_traffic			12					niet bepaald						niet bepaald
 
+	//dus pixel 0 krijgt output 1
 	for (int i = 0; i < 32; i++) {
 		led_vlap[i] = i + 1;
 	}
@@ -387,6 +389,7 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 void COM_fastled() {
 	
 	//refreshes the pixels in fastled
+	//beter om overal alleen die register bit te zetten.? Nee dat werkt alleen voor slow dus huisjes aan en uit enzo.
 	COM_reg |= (1 << 1);
 	if (DEK_Status < 2) {
 		FastLED.show(); //only when there is no DCC command being processed 
@@ -424,12 +427,13 @@ void COM_Clk() {
 		if (mt_min > 60) {
 			mt_min = 1;
 			mt_hr ++;
-				Serial.print("Modeltijd uur:  ");
-				Serial.println(mt_hr);
+
 
 			if (mt_hr > 23) {
 				mt_hr = 0;
 			}
+				Serial.print("Modeltijd uur:  ");
+				Serial.println(mt_hr);
 		}
 	}
 }
@@ -443,8 +447,8 @@ void COM_ProgramAssign() {
 			PRG_reg[i] = 0; //init program registers
 			switch (i) {
 			case 2:
-				PRG_hr[2] = mt_zonop;
-				PRG_min[2] = 1;
+				PRG_hr[2] =mt_zonop;
+				PRG_min[2] =1;
 				PRG_reg[2] |= (1 << 2);
 				break;
 			case 3:
@@ -461,8 +465,9 @@ void COM_ProgramAssign() {
 
 				break;
 			case 10:
-				//program always active, no init needed
-				PRG_reg[10] |= (1 << 0);
+				PRG_hr[10] = mt_zononder;
+				PRG_min[10] = random(5, 30);
+				PRG_reg[10] |= (1 << 2); //enable model time start
 				break;
 
 			default:
@@ -484,7 +489,7 @@ void COM_ProgramAssign() {
 	}
 	else { //find not-active program
 		if (bitRead(PRG_reg[pna], 0) == false & bitRead(PRG_reg[pna], 2) == true & PRG_hr[pna] == mt_hr & PRG_min[pna] == mt_min) {
-			//schakelen op modeltijd
+			//schakelen op modeltijd, eventuele initialisering van het te starten programma
 			switch (pna) {
 			case 2:
 				if (mt_hr == mt_zonop) {
@@ -497,6 +502,7 @@ void COM_ProgramAssign() {
 				}
 				PRG_reg[2] |= (1 << 0);
 				PRG_reg[2]|= (1 << 7);
+
 				break;
 			}
 			COM_ps(pna);
@@ -523,10 +529,10 @@ void COM_ps(int pn) { //ps=program switch
 			PRG_lightning();
 			break;
 		case 6:
-			//PRG_las();
+			PRG_las();
 			break;
 		case 10:
-			//PRG_build();
+			PRG_huis(); //=building 1
 			break;
 		case 11:
 			break;
@@ -609,6 +615,7 @@ void COM_switch() {
 
 					PRG_reg[2] |= (1 << 0); //starts program 2 PRG_dl()
 					PRG_reg[2] |= (1 << 7); //flag for changed
+					BLD_reset(); //reset tijd afhankelijke programmaas, alleen bij handschakeling, anders in PRG_dl zetten
 					COM_reg ^= (1 << 3); //bit3 false = day, true is night
 					PORTB &= ~(1 << 4);
 					PORTB &= ~(1 << 5);
@@ -697,6 +704,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 
 				PRG_reg[2] |= (1 << 0); //start PRG_dl
 				PRG_reg[2] |= (1 << 7); //Set changed flag
+				BLD_reset(); //resets time depended programs
 
 				break;
 
@@ -924,17 +932,32 @@ void APP_FX(boolean type, int adres, int decoder, int channel, boolean port, boo
 		}
 	}
 }
-void LED_set(byte output, byte r,byte g,byte b) { 
+void LED_setPix(byte output, byte r,byte g,byte b) { 
+	//sets new value for pixel RGB
 	for (byte i = 0; i < 32; i++) { //check all leds in this group
 			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);			
 	}
 	COM_fastled();
+	//COM_reg |= (1 << 1); //starts fastled.show only for slow effects
 }
-void LED_go(byte prg) {
-	for (byte i = 0; i < 32; i++) { //check all leds in this group
-		if (led_vlap[i] == prg)led_vl[i] = CRGB(BLD_clr[0], BLD_clr[1],BLD_clr[2] );
+void LED_setLed(byte output,byte led,byte value) {
+	//sets new value for 1 othe leds in a pixels
+	for (byte i = 0; i < 32; i++) { //check all pixels
+		if (led_vlap[i] == output) {
+			switch (led) {
+			case 0:
+				led_vl[i].r = value;
+				break;
+			case 1:
+				led_vl[i].g = value;
+				break;
+			case 2:
+				led_vl[i].b = value;
+				break;
+			}
+		}
 	}
-	COM_fastled();
+	COM_reg |= (1 << 1); //starts fastled.show
 }
 void LED_program() {
 	static byte s=0;
@@ -1004,8 +1027,9 @@ void PRG_dl(byte pn) {
 	static unsigned long dl_t = 0;	
 	static byte fase = 0; 
 			
-	if (bitRead(PRG_reg[pn], 7) == true){ 	//if true day/night is changed (com_reg bit 3)
+	if (bitRead(PRG_reg[pn], 7) == true){ 	//if true day/night is manually changed by DCC or switch
 		PRG_reg[pn] &= ~(1 << 7);
+		//BLD_reset(); //reset time depended programs, even uit staat nu in COM_switch
 		teller = 0;
 		ledcount = 0;
 		fase = 0;
@@ -1031,8 +1055,7 @@ void PRG_dl(byte pn) {
 				switch (CV_wt) {
 					//0=random 1=sunny 2=clouded 3=miserable weather 4=no effects
 				case 0:
-					//weer = random(1, 4); //0-1-2-3 (never 4)
-					weer = 1;
+					weer = random(1, 4); //0-1-2-3 (never 4)					
 					break;
 				default:
 					weer = CV_wt;
@@ -1373,8 +1396,8 @@ void PRG_dl(byte pn) {
 					teller = 0;	
 				}
 				else {
-					fase = 206;
-					Serial.println("206");
+					fase = 203;
+
 				}			
 			}
 			break;
@@ -1396,88 +1419,44 @@ void PRG_dl(byte pn) {
 			if (ledcount >= led_al)fase = 201;
 			break;
 
-		case 206:		
-			//PRG_reg[2] ^= (1 << 5);
+		case 203:		
+			zwart(ledcount, 1, 1, 1, 1, true);
+			if (ledcount >= led_al & bitRead(PRG_reg[2], 6) == true)fase = 204;
+			break;	
+		case 204:
+			dl_sp = (led_dl[ledcount].r + led_dl[ledcount].g + led_dl[ledcount].b);
+			if (dl_sp == 1 | dl_sp == 2) led_dl[ledcount] = 0x010101;
+			if (ledcount >= led_al) fase = 205;
+			break;
 
-			//if (bitRead(PRG_reg[2], 5) == true) {			//??????
-			if (led_dl[ledcount].r > 1) led_dl[ledcount].r--; // = led_dl[ledcount].r - (1 + led_dl[ledcount].r / 10);
-			if (led_dl[ledcount].g > 1)led_dl[ledcount].g--;// = led_dl[ledcount].g - (1 + led_dl[ledcount].g / 10);
-			if (led_dl[ledcount].b > 1)led_dl[ledcount].b--;// = led_dl[ledcount].b - (1 + led_dl[ledcount].b / 10);
-			//}
-
-			if (rled[0] == ledcount | rled[1] == ledcount) {
-
-				for (byte i = 0; i < 10; i++) { //reduces series of remaining on pixels
-					if (led_dl[ledcount + i]) {
-						if (led_dl[ledcount + (i + 1)]) {
-							led_dl[ledcount + (i + 1)] = 0x000000;
-						}
-						else {led_dl[ledcount + i] = 0x000000;
-						}											
-						i = 20;
+		case 205:
+			if (ledcount == rled[0]) {
+				for (int i = 0; i < led_al; i++) {
+					dl_sp = ledcount + i;
+					if (dl_sp > led_al) dl_sp = 0;
+					if (led_dl[dl_sp]) {
+						led_dl[dl_sp] = 0x000000;
+						i = led_al;						
 					}
 				}
 			}
-			if (ledcount >= led_al) {
-				fase = 207;
-				Serial.println("207");
-			}
-				
-
-			//dl_sp++;
-			//if (dl_sp > 5) {
-			//	COM_fastled();
-			//	dl_sp = 0;
-			//}
-			break;		
-
-			case 207: //check for reaching miniumum value
-				//random kill pixels
-								
-				if (led_dl[ledcount].r > 1) {
-					PRG_reg[2] &= ~(1 << 6);
-				}
-				else {
-					if (led_dl[ledcount].g > 1) {
-						PRG_reg[2] &= ~(1 << 6);
+			if (ledcount >= led_al) fase = 206;			
+			break;
+						
+			case 206:
+				if (led_dl[ledcount])teller++;
+			
+				if (ledcount >= led_al) {
+					
+					if (teller > 8)	{ // (led_al / 15)) {
+						fase = 205;	
+						teller = 0;	
 					}
 					else {
-						if (led_dl[ledcount].b > 1) {
-							PRG_reg[2] &= ~(1 << 6);
-						}
+						fase = 210;
 					}
-
-					dl_sp = (led_dl[ledcount].r + led_dl[ledcount].g + led_dl[ledcount].b);
-					if (dl_sp == 1 | dl_sp == 2) led_dl[ledcount] = 0x010101;
-
-				}	
-				if (ledcount >= led_al) {
-				if (bitRead(PRG_reg[2], 6) == true) {
-					fase = 210;
 				}
-				else {
-					fase = 206;
-					Serial.println("terug naar 206");
-				}
-				}
-
 				break;
-
-			case 208:
-				if (led_dl[ledcount]) {
-					teller++;
-				}
-				
-
-
-				if (ledcount >= led_al) {
-					Serial.println(teller);
-					if (teller > (led_al / 15)) {
-						PRG_reg[2] &= ~(1 << 6);
-						teller = 0;
-					}
-				}
-					break;
 
 			case 210:
 				if (led_dl[ledcount]) { 
@@ -1630,7 +1609,7 @@ void PRG_lightning() { //Programnummer=4
 		}
 	}
 }
-void PRG_dld(byte pn) {
+void PRG_dld(byte pn) { //program #3
 	//switches between day and night without sunrise or sunset		
 	static unsigned long t = 0;
 	static byte lc=0;
@@ -1638,20 +1617,19 @@ void PRG_dld(byte pn) {
 		t = millis();
 		if (bitRead(COM_reg, 3) == false) { //dag
 			led_dl[lc] = CRGB(250, 250, 250);
-			mt_hr = mt_zonop;
-			mt_min = 0;
 		}
 		else {//nacht	
 			led_dl[lc] = CRGB(0, 0, 0);
-			mt_hr = mt_zononder;
-			mt_min = 0;		
 		}
 		lc++;		
 		if (lc > led_al) {
 			COM_fastled();
+			mt_hr = mt_zonop;
+			if (bitRead(COM_reg, 3) == true)mt_hr = mt_zononder;
+			mt_min = 0;
 			lc = 0;
 			PRG_reg[pn] &= ~(1 << 0); 
-			Serial.println("stop dld");
+			BLD_reset();
 		}
 	}
 }
@@ -1688,8 +1666,8 @@ void PRG_traffic(int pn) {
 				WieMag = 1;
 				out = output2;
 				periode = 5000;
-				LED_set(output1, 200,0,0);
-				LED_set(output2, 200,0,0);
+				LED_setPix(output1, 200,0,0);
+				LED_setPix(output2, 200,0,0);
 				break;
 			case 1:
 				periode = 100;
@@ -1706,20 +1684,20 @@ void PRG_traffic(int pn) {
 
 			case 2:
 				periode = 12000;
-				LED_set(out, 0,200,0);
+				LED_setPix(out, 0,200,0);
 				fase = 3;
 				break;
 
 			case 3: //OW oranje
 				periode = 4000;
-				LED_set(out, 0,0,150);
+				LED_setPix(out, 0,0,150);
 				fase = 4;
 				break;
 			case 4:
 				//all red
 				periode = 5000;
-				LED_set(output1, 200,0,0);
-				LED_set(output2, 200,0,0);
+				LED_setPix(output1, 200,0,0);
+				LED_setPix(output2, 200,0,0);
 				fase = 1;
 				break;
 			}
@@ -1735,229 +1713,165 @@ void PRG_las() { //programma 6
 		t = millis();
 		PRG_reg[6] ^= (1 << 7);
 		if (bitRead(PRG_reg[6], 7) == true) {
-			LED_set(out, 0, 0, 0);
+			LED_setPix(out, 0, 0, 0);
 		}
 		else {
-			LED_set(out, 255, 255, 255);
+			LED_setPix(out, 255, 255, 255);
 		}
 	}
 }
-void PRG_build() { //prg 10
-//huizen en gebouwen
-	//PRG_reg
-	//bit 6 flag for used program part
-	//bit 7 = dagnacht status laatste doorloop
-	static byte bld_min;
-	static int bld_mc; //mc=minute count
-	static byte bld_output;
-	static byte bld_rdm[6]; //random 'starttijd van programma'
+void PRG_huis() { //prg 10
+	/*
+	start op modeltijd, initiele start op zonsondergang
+	BLDcount telt de cyclus af na iedere stap modeltijd opnieuw instellen.
+	huizen:
+	klein huis 1 output 1 boven rood(0) beneden groen(1) wc blauw(2)
 
-	//minuten teller, vertraagd uitvoering 1x per minuut en onderstaand wordt
-	//per modelminuut maar 1x doorlopen, bij volgende doorloop is mt_min verhoogd.
-	if (bld_min != mt_min) {
-		bld_min = mt_min;
-		bld_mc++;
-		if (bitRead(PRG_reg[10], 7) != bitRead(COM_reg, 3)) { //dagnacht is gewisseld
-			PRG_reg[10] ^= (1 << 7);
-			bld_mc = 0;
-			//calculate 6 random start numbers
-			for (int i = 0; i < 6; i++) {
-				bld_rdm[i] = random(0, 30);
-			}
-		}
-		//***************huis1
-		//check of program wordt gebruikt en lees current waarde van de leds in
-		bld_output = 1; //klein huis1, 1 pixel
-		build_use(bld_output);
-		if (bitRead(PRG_reg[10], 6) == true) {
-			build_h1(bld_mc, bld_rdm[0]);
-			LED_go(bld_output);
-		}
-		//*******************huis 2
+	*/
+	//start op zonsondergang
+	prgc[0]++;
+	Serial.println(prgc[0]);
+	switch (prgc[0]) {
 
-		//prg = 2; //klein huis2, 1 pixel
-
-		//***************Herenhuis1
-		//tijdens ontwerp even 2e en 3e pixel (1 en 2) en output 2
-		//2 pixels, pixels apart
-		bld_output = 2; // 1e output
-		for (int i = 0; i < 2; i++) {			
-			build_use(bld_output + i);
-			if (bitRead(PRG_reg[10], 6) == true) {
-				build_hh1(bld_mc, bld_rdm[5],1+i);
-				LED_go(bld_output+i);
-			}
-		}
-	}
-}
-void build_use(byte prg) {
-	//checks if programpart is in use, loads pixel value, sets flag
-	PRG_reg[10] &= ~(1 << 6);//clear flag
-	for (int i = 0; i < 32; i++) {
-		if (led_vlap[i] == prg) {
-			PRG_reg[10] |= (1 << 6); //set flag, program is active
-			BLD_clr[0] = led_vl[i].r;
-			BLD_clr[1] = led_vl[i].g;
-			BLD_clr[2] = led_vl[i].b;
-			i = 50;
-		}
-	}
-}
-void build_h1(int mnt,int rdm) {
-	//klein huis 1 pixel output #1 r(1)=boven g(0)=beneden b(2)=wc, badkamer
-	if (bitRead(COM_reg, 3) == true) { //naar nacht
-
-		switch (mnt+rdm) { //mc=minute count, verstreken tijd na wisseling dag/nacht
-		case 30:
-			BLD_clr[1] = 0xFF;
-			break;
-		case 80:
-			BLD_clr[2] = 0xFF;
-			break;
-		case 100:
-			BLD_clr[0] = 0xFF;
-			break;
-		case 175:
-			BLD_clr[1] = 2;
-			break;
-		case 190:
-			BLD_clr[2] = 2;
-			break;
-		case 210:
-			BLD_clr[0] = 0;
-			break;
-		}
-	}
-	else { //naar dag
-		switch (mnt-rdm) {
-		case 30: //uitschakelen 
-			BLD_clr[0] = 100; //beneden aan
-			break;
-		case 50:
-			BLD_clr[2] = 0xFF; //wc
-			break;
-		case 75:
-			BLD_clr[2] = 0; //wc uit
-			break;
-		case 100:
-			BLD_clr[1] = 0xFF; //slaapkamer
-			break;
-		case 110:
-			BLD_clr[0] = 0; //beneden
-			break;
-		case 120:
-			BLD_clr[1] = 0;
-			break;
-		}
-	}	
-}
-
-void build_h2() {
-
-}
-void build_hh1(int mnt, int rdm,byte pix) {
-	//Middelgroothuis 2pixels output (tijdelijk) #2-#3  
-	//p1r=gang, garberobe
-	//p1g=huiskamer beneden
-	//p1b=buitenlicht
-	//p2r=zolder
-	//p2g=slaapkamer links
-	//p2b=WC badkamer
-	if (bitRead(COM_reg, 3) == true) {//naar nacht
-		switch (mnt + rdm) {
-		case 30:
-			if (pix == 1)BLD_clr[0] = 0xFF; //gang
-			break;
-		case 36:
-			if (pix == 1)BLD_clr[2] = 0xFF; //buitenlamp
-			break;			
-		case 42:
-			if (pix == 1)BLD_clr[1] = 0xFF; //huiskamer aan
-			break;
-		case 45:
-			if (pix == 1)BLD_clr[0] = 0;//gang uit
-			break;
-		case 100:
-			if (pix == 1)BLD_clr[0] = 0xFF; //gang aan
-			break;
-		case 105:
-			if (pix == 2)BLD_clr[2]= 0xFF; //WC aan
-			break;
-		case 110:
-			if (pix == 2)BLD_clr[0] = 0xFF; //Zolder aan
-			break;
-		case 115:
-			if (pix == 2)BLD_clr[2] = 0; //WC uit
-			break;
-		case 118:
-			if (pix == 1)BLD_clr[0] = 0; //gang uit
-			break;
-		case 170:
-			if (pix == 1)BLD_clr[0] = 0xFF; //gang aan
-			break;
-		case 175:
-			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
-			break;
-		case 185:
-			if (pix == 2)BLD_clr[2] = 0; //WC uit
-			break;
-		case 190:
-			if (pix == 1)BLD_clr[1] = 2; //huiskamer zwak uit
-			break;
-		case 195:
-			if (pix == 2)BLD_clr[1] = 0xFF; //slaapkamer aan
-			break;
-		case 198:
-			if (pix == 1)BLD_clr[0] = 0; //gang uit
-			break;
-		case 205:
-			if (pix == 2)BLD_clr[1] = 2; //slaapkamer zwak
-			break;
-		case 230:
-			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
-			break;
-		case 240:			
-			if (pix == 2)BLD_clr[2] = 0; //WC uit
-			break;
-		case 250:
-			if (pix == 2)BLD_clr[0] = 2; //Zolder zwak
-		case 355:
-			if (pix == 2)BLD_clr[0] = 0xFF; //zolder aan
-			break;
-		case 360:
-			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
-			break;
-		case 375:
-			if (pix == 2)BLD_clr[2] = 0; //WC uit
-			break;
-		case 380:
-			if (pix == 2)BLD_clr[0] = 2; //zolder zwak
-			break;
-		case 490:
-			if (pix == 2)BLD_clr[0] = 0xFF; //zolder aan
-			break;
-		case 500:
-			if (pix == 2)BLD_clr[2] = 0xFF; //WC aan
-			break;
-		case 520:
-			if (pix == 2)BLD_clr[2] = 0; //WC uit
+	case 1:
+		
+		LED_setLed(1, 1, 250); //(1)huiskamer aan
+		interval(10, random(20,60), 0);//nieuwe start tijd instellen
 		break;
-		case 530:
-			if (pix == 2)BLD_clr[0] = 2; //zolder zwak
-			break;
+	case 2:
+		LED_setLed(1, 2, 250); //(1)WC aan
+		interval(10, random(15,25), 0);
+		break;
+	case 3:
+		LED_setLed(1, 2, 0); //(1)WC uit
+		interval(10, random(60,120), 0);
+		break;
+	case 4:
+		LED_setLed(1,2, 250); //(1)wc aan
+		interval(10, random(15,25), 0);
+		break;
+	case 5:
+		LED_setLed(1, 2, 0); //(1)WC uit
+		interval(10, random(20,60), 0);
+		break;
+	case 6:
+		if (mt_hr >0 & mt_hr < mt_zonop) {
+			LED_setLed(1, 0, 250); //slaapkamer aan
+			interval(10, 5, 0);
 		}
-	}
-	else { //naar dag
-		switch (mnt - (rdm)) {
-		case 30:
-			break;
-		case 60:
-			if (pix == 1)BLD_clr[2] = 0;
-			break;
+		else {	
+			interval(10, 10, 0);
+			prgc[0]--; //starts counter 6 until it is later then 1 oçlock
 		}
-	}
-}
 
+		break;
+
+	case 7:
+		LED_setLed(1, 2, 250); //(1)WC aan
+		interval(10, random(10, 20), 0);
+		break;
+	case 8:
+		LED_setLed(1, 1, 2); //(1)huiskamer zwak
+		interval(10, random(5,15), 0);
+		break;
+	case 9:
+		LED_setLed(1, 2, 0); //(1)WC uit
+		interval(10, random(10,20), 0);
+		break;
+
+	case 10:
+		LED_setLed(1, 0, 5); //(1) slaapkamer zwak
+		interval(10, random(5,15), 0);
+		break;
+	case 11:
+		LED_setLed(1, 0, 0); //slaapkamer uit
+		interval(10, random(10, 20), 1);
+		break;
+
+		//hier gebleven nu zien of er ook na zonsopgang iets kan komen.
+
+	case 12:
+		break;
+
+
+
+
+	default:
+//reset als volgnummer niet voorkomt
+		prgc[0] = 0;
+		PRG_hr[10] = mt_zononder;
+		PRG_min[10] = random(20, 60);
+		
+		break;
+	}
+
+
+}
+void BLD_reset() {
+	//reset time en tellers bij van dag naar nacht schakelen NIET de automatische overgang, dit moet per programma goed worden afgehandeld
+	//op meerdere plekken wordt deze routine aangeroepen, om bovenstaande te realiseren
+	Serial.println("reset");
+	for (byte i = 10; i < 20; i++) {
+		//mogelijke programmaas 10 tot 20 voor verlichting. Later aanpassen
+		switch (i) {
+		case 10:
+			//reset van programma 10
+			prgc[0] = 0;
+			PRG_hr[10] = mt_zononder;
+			PRG_min[10] = random(10, 30);
+			break;
+		}
+	}
+
+
+
+
+}
+void interval(byte prg,byte tijd,byte type) {
+	//berekend de nieuwe starttijd voor een programma.
+	//type 0=huidige tijd plus interval 1=zonsopgang plus interval 2=zonsondergang plus interval
+	//check en correct lengte interval meer dan 60minuten.
+	static byte hr = 0;
+	while (tijd > 59) {
+		hr++;
+		tijd = tijd - 60;
+	}
+	switch (type) {
+	case 0: //from current time
+		PRG_min[prg] = mt_min + tijd;
+		if (PRG_min[prg] > 59) {
+			PRG_min[prg] = PRG_min[prg] - 60;
+			hr++;
+		}
+		PRG_hr[prg] = mt_hr + hr;
+		if (PRG_hr[prg] > 23)PRG_hr[prg] = PRG_hr[prg] - 24;
+
+		Serial.println(PRG_hr[10]);
+		Serial.println(PRG_min[10]);
+
+
+
+		break;
+	case 1: //from sunrise
+		PRG_min[prg] = tijd;
+		if (PRG_min[prg] > 59) {
+			PRG_min[prg] = PRG_min[prg] - 60;
+			hr++;
+		}
+		PRG_hr[prg] = mt_zonop + hr;
+		break;
+	case 2: //from sunset
+		PRG_min[prg] = tijd;
+		if (PRG_min[prg] > 59) {
+			PRG_min[prg] = PRG_min[prg] - 60;
+			hr++;
+		}
+		PRG_hr[prg] = mt_zononder + hr;
+		break;
+	}
+
+	hr = 0; //reset uurteller
+}
 void wit(byte led, byte inc, byte mr, byte mg, byte mb,boolean stop) {
 
 	if (led_dl[led].r < mr) {

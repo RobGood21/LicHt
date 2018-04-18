@@ -14,7 +14,7 @@ Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichti
 //prg_reg   =register booleans for programs, only runtime
 	//bit0=init 
 	//bit1=active 
-	//bit2=Start by model time
+	//bit2=Start by model time true is enable, false -disable
 	//bit3=free
 	//bit4==exclusive for program
 	//bit5==exclusive for program
