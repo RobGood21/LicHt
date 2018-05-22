@@ -62,7 +62,6 @@ bit1=status switch A1 (clock/ program)
 
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
-byte prgc[10]; //program counter, houdt de hoeveelheid in de gaten...!!!!
 unsigned long Clk;
 unsigned int mt; //modeltime minute
 byte mt_min=0; //modeltimeclock minutes 
@@ -82,19 +81,22 @@ byte DEK_Reg; //register voor de decoder
 byte DEK_Status = 0;
 byte DEK_byteRX[6]; //max length commandoos for this decoder 6 bytes (5x data 1x error check)
 byte DEK_countPA = 0; //counter for preample
-byte DEK_BufReg[12]; //registerbyte for 12 command buffers
+byte DEK_BufReg[6]; //registerbyte for 12 command buffers (terug naar 6 buffers)
 					 //bit7= free (false) bit0= CV(true)
-byte DEK_Buf0[12];
-byte DEK_Buf1[12];
-byte DEK_Buf2[12];
-byte DEK_Buf3[12];
-byte DEK_Buf4[12];
-byte DEK_Buf5[12];
+byte DEK_Buf0[6];
+byte DEK_Buf1[6];
+byte DEK_Buf2[6];
+byte DEK_Buf3[6];
+byte DEK_Buf4[6];
+byte DEK_Buf5[6];
 
 void setup() {
 	//test mode
+
 	delay(350);
 	Serial.begin(9600);
+	Serial.println("void setup");
+	
 	MEM_read();
 	
 	DDRB |= (1 << 5);	//pin13
@@ -109,7 +111,7 @@ void setup() {
 	
 	//instellen modeltijd bij power up
 	mt_hr = mt_zonop;
-	mt_min = 1;
+	mt_min = 0;
 
 	randomSeed(analogRead(0));
 
@@ -122,6 +124,25 @@ void setup() {
 	EICRA |= (1 << 0);//EICRA – External Interrupt Control Register A bit0 > 1 en bit1 > 0 (any change)
 	EICRA &= ~(1 << 1);	//bitClear(EICRA, 1);
 	EIMSK |= (1 << INT0);//bitSet(EIMSK, INT0);//EIMSK – External Interrupt Mask Register bit0 INT0 > 1	
+	setup_prg();
+}
+
+void setup_prg() {
+	//init of the 32 programs	
+	for (byte i = 0; i < 32; i++) {
+		PRG_reg[i] = B00000000; //init program registers
+		//singles
+		switch (i) {
+		case 2:
+			//wake up program daylight, start at sunrise
+			PRG_reg[2] |= (1 << 0);
+			PRG_reg[2] |= (1 << 7);
+			//COM_reg |= (1 << 3); //activate for start at sunset
+			break;
+		}
+	}
+	//series
+	BLD_reset(); //resets the building programs
 }
 void MEM_read() {
 	//merk op volgorde van variable instellen is belangrijk, eerst COM_DCCadres en COM_DCCadres instellingen
@@ -244,7 +265,7 @@ void DEK_begin() {//runs when bit is corrupted, or command not correct
 }
 void DEK_BufCom(boolean CV) { //create command in Buffer
 	byte i = 0;
-	while (i < 12) {
+	while (i < 6) {
 
 		if (bitRead(DEK_BufReg[i], 7) == false) {
 			DEK_BufReg[i] = 0; //clear found buffer
@@ -384,7 +405,7 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 		DEK_Buf5[n] = 0;
 	}
 	n++;
-	if (n > 12)n = 0;
+	if (n > 6)n = 0; //was > 12
 }
 void COM_fastled() {
 	
@@ -424,8 +445,8 @@ void COM_Clk() {
 			if (bitRead(PORTB,3)==true) PORTB &= ~(1 << 3);
 		}
 		
-		if (mt_min > 60) {
-			mt_min = 1;
+		if (mt_min > 59) {
+			mt_min = 0;
 			mt_hr ++;
 
 
@@ -441,55 +462,13 @@ void COM_ProgramAssign() {
 	//plays, assigns programs only 1 every cycle 
 	//first 64 active programs 1by1 then only 1 not active programs, then 64 active and so on. 	
 	//after start all programs must be passed once
-	static byte init = 0;
-	if (init == 0) {
-		for (byte i = 0; i < 32; i ++ ) {
-			PRG_reg[i] = 0; //init program registers
-			switch (i) {
-			case 2:
-				PRG_hr[2] =mt_zonop;
-				PRG_min[2] =1;
-				PRG_reg[2] |= (1 << 2);
-				break;
-			case 3:
-				//no initial start
-				break;
-
-			case 4:
-				//no initial start				
-				break;
-			case 6:
-				//temp always on
-				//PRG_reg[6] |= (1 << 0);
-				//no init
-
-				break;
-			case 10:
-				PRG_hr[i] = mt_zononder;
-				PRG_min[i] = 1;// random(10, 30);
-				PRG_reg[i] |= (1 << 2); //enable model time start
-				break;
-			case 11:
-				PRG_hr[i] = mt_zononder;
-				PRG_min[i] = random(10, 30);
-				PRG_reg[i] |= (1 << 2); //enable model time start
-				prgc[1] = 0;
-				break;
-
-
-			default:
-				COM_ps(i);
-				break;
-			}			
-		}
-		init = 1;
-	}	
 	static byte pa; //program active
-	static byte pna;//program not active
+	static byte pna;//program not active	
+
 	if (bitRead(COM_reg, 0) == true) { //find active program
 		if (bitRead(PRG_reg[pa], 0) == true) COM_ps(pa);
 		pa ++;
-		if (pa > 64) {
+		if (pa > 31) {
 			pa = 0;
 			COM_reg &= ~(1 << 0); //reset bit 0, next cycle not active
 		}
@@ -499,6 +478,7 @@ void COM_ProgramAssign() {
 			//schakelen op modeltijd, eventuele initialisering van het te starten programma
 			switch (pna) {
 			case 2:
+				//daglicht start via modeltijd....wake up for new sunset/sunrise cycle
 				if (mt_hr == mt_zonop) {
 					Serial.println("zon op");
 					COM_reg &= ~(1 << 3);
@@ -507,19 +487,23 @@ void COM_ProgramAssign() {
 					COM_reg |= (1 << 3);				
 					Serial.println("zon onder");
 				}
-				PRG_reg[2] |= (1 << 0);
-				PRG_reg[2]|= (1 << 7);
 
+				PRG_reg[2] |= (1 << 0); //enable active
+				PRG_reg[2]|= (1 << 7);
 				break;
-			}
+			default:
 			COM_ps(pna);
+			Serial.print("mt start: ");
+			Serial.println(pna);
+			break;
+			}
 		}
 		COM_reg |= (1 << 0); //next cycle active
 		pna ++;
-		if (pna > 64)pna = 0;
+		if (pna > 31)pna = 0;
 	}
 }
-void COM_ps(int pn) { //ps=program switch
+void COM_ps(byte pn) { //ps=program switch
 	//total, max 64 programs
 	//1-10 daylight and weather 11/30 lighting houses and streetlights  31 > no idea yet
 	//Serial.println(bitRead(PRG_reg[3], 0));
@@ -536,25 +520,32 @@ void COM_ps(int pn) { //ps=program switch
 			PRG_lightning();
 			break;
 		case 6:
-			PRG_las();
+			//PRG_las();
 			break;
 		case 9:
 			//PRG_traffic(pn);
 			break;
-
-
+			
 		case 10:
-			//PRG_huis(); //=building 1
+			PRG_huis(pn,1,1); //=building 1
 			break;
+			/*
 		case 11:
-			PRG_huisI();
+			//PRG_huis(pn,2,1);
 			break;
-
-
-
-		default:
-			//all not defined programs// do nothing
+		case 12:
+			//PRG_huis(pn, 3,2);
 			break;
+		case 13:
+			//PRG_huis(pn, 4,1);
+			break;
+		case 14:
+			//PRG_huis(pn, 5,4);
+			break;
+		case 15:
+			//PRG_huis(pn, 6,3);
+			break;	
+*/
 		}
 	}
 }
@@ -952,25 +943,31 @@ void LED_setPix(byte output, byte r,byte g,byte b) {
 	COM_fastled();
 	//COM_reg |= (1 << 1); //starts fastled.show only for slow effects
 }
-void LED_setLed(byte output,byte led,byte value) {
+void LED_setLed(byte output, byte led, byte value) {
 	//sets new value for 1 othe leds in a pixels
-	for (byte i = 0; i < 32; i++) { //check all pixels
-		if (led_vlap[i] == output) {
-			switch (led) {
-			case 0:
-				led_vl[i].r = value;
-				break;
-			case 1:
-				led_vl[i].g = value;
-				break;
-			case 2:
-				led_vl[i].b = value;
-				break;
+	if (led < 4) {
+		for (byte i = 0; i < 32; i++) { //check all pixels
+			if (led_vlap[i] == output) {
+				switch (led) {
+				case 0:
+					led_vl[i].r = value;
+					break;
+				case 1:
+					led_vl[i].g = value;
+					break;
+				case 2:
+					led_vl[i].b = value;
+					break;
+				}
 			}
 		}
+		COM_reg |= (1 << 1); //starts fastled.show
 	}
-	COM_reg |= (1 << 1); //starts fastled.show
+	else {
+		Serial.println("ledset te groot");
+	}
 }
+
 void LED_program() {
 	static byte s=0;
 	LED_off();
@@ -1044,7 +1041,6 @@ void PRG_dl(byte pn) {
 		//Serial.println("dl reset");
 
 		PRG_reg[pn] &= ~(1 << 7);
-		//BLD_reset(); //reset time depended programs, even uit staat nu in COM_switch
 		teller = 0;
 		ledcount = 0;
 		fase = 0;
@@ -1513,16 +1509,18 @@ void PRG_dl(byte pn) {
 				dl_sc = 0;
 				dl_s = 0;
 				fase = 0;	
-				PRG_reg[pn] &= ~(1 << 0);
+				PRG_reg[pn] &= ~(1 << 0); //disable active
 
 				PRG_reg[pn] |= (1 << 2); //enable model time start
 				if (bitRead(COM_reg, 3) == false) { //stops flashing led
 					PORTB |= (1 << 5);
 					PRG_hr[2] = mt_zononder;
+					PRG_min[2] = 0;
 				}
 				else {
 					PORTB |= (1 << 4);
 					PRG_hr[2] = mt_zonop;
+					PRG_min[2] = 0;
 				}
 			}
 	}
@@ -1737,231 +1735,222 @@ void PRG_las() { //programma 6
 		}
 	}
 }
-void huisvoorbeeld() {////prg xx prgc[x] output x
-	//deze hele void verwijderen als klaar is, dient als voorbeeld. sjabloon
-
-
-	/*
-	prg = het programma volgorde nummer zoals gebruikt in COM_PS bv.
-	prgc[x] = een array gebruikt om tellers in op te slaan per programma, niet hetzelfde als prg let op en maak de array straks precies de juiste grootte
-	output is het output nummer dit hier worden in MEM_read de pixels aan gekoppeld
-	*/
-	prgc[0]++;
-	switch (prgc[0]) {
-		case 1:
-			LED_setLed(2, 1, 250); //huiskamer aan
-
-			//1e arg   = het output nummer
-			//2e arg = welke led van de pixel,Merk op 0=groen 1=rood 2=blauw 
-			//3e arg= waarde hoe fel moet led branden, 255 max 0=uit
-
-		
-			interval(10, random(20, 60), 0);//nieuwe start tijd instellen
-			//niuewe tijd voor de volgende event
-			//arg1= programma nummer
-			//arg2=periode in model minuten
-			//arg3= van waar de periode.... 0= van nu 1=van zonsopgang 2=van zonsondergang (let op slaat misschien een dag over dan...! 3=van 12uur snachts.(bedtijd)
-		break;
-		default:
-			//als laatste nummer is geweest dan komt deze reset alles voor de volgende dag. 
-			prgc[0] = 0;
-			PRG_hr[10] = mt_zononder;
-			PRG_min[10] = random(20, 60);
-
-			break;
-
-	}
-
-
-}
-void PRG_huis() { //prg 10 prgc[0]
-	/*
-	start op modeltijd, initiele start op zonsondergang
-	BLDcount telt de cyclus af na iedere stap modeltijd opnieuw instellen.
-	huizen:
-	klein huis 1 output 1 huiskamer rood(0) slaapkamer groen(0) wc blauw(2)
-	
-	deze chips zijn rood en groen ' verwisseld?' 
-
+void PRG_huis(byte pg, byte out,byte pix) { //pc=program counter, pg=program out=output
+	/*  huiskamer(1)  slaapkamer(0) wc(2)
 	start op zonsondergang
 	*/	
-	prgc[0]++;
-	//Serial.println(prgc[0]);
-	switch (prgc[0]) {
+	Serial.println(PRG_reg[pg]);
+	PRG_reg[pg]=PRG_reg[pg] >> 3; 
 
-	case 1:		
-		LED_setLed(1, 1, 250); //(1)huiskamer aan
-		interval(10, random(20,60), 0);//nieuwe start tijd instellen
+	static byte hk; //huiskamer
+	static byte sk; //slaapkamer
+	static byte wc; //badkamer, wc
+	static byte bl; //buitenlicht
+	static byte hl; //hal
+
+	switch (pix) {
+	case 1:
+		hk = 1;
+		sk = 0;
+		wc = 2;
+		bl = 10;
+		hl = 10;
 		break;
+
 	case 2:
-		LED_setLed(1, 2, 250); //(1)WC aan
-		interval(10, random(15,25), 0);
+		hk = 1;
+		sk = 2;
+		wc = 0;
+		bl = 10;
+		hl = 10;
 		break;
 	case 3:
-		LED_setLed(1, 2, 0); //(1)WC uit
-		interval(10, random(60,120), 0);
+		hk = 1;
+		sk = 0;
+		bl = 2;
+		wc = 10;
+		hl = 10;
 		break;
 	case 4:
-		LED_setLed(1,2, 250); //(1)wc aan
-		interval(10, random(15,25), 0);
+		hk = 1;
+		sk = 0;
+		hl = 2;
+		wc = 10;
+		bl = 10;
+		break;
+	}
+	PRG_reg[pg] ++;
+	Serial.println(PRG_reg[pg]);
+
+	switch (PRG_reg[pg]){
+	case 1:
+		LED_setLed(out, bl, 250);//buitenlicht aan
+		interval(pg, random(5, 15), 0);
+		break;
+	case 2:		
+		LED_setLed(out, hk, 250);//huiskamer aan
+		interval(pg,random(10,60), 0);
+		break;
+	case 3:
+		LED_setLed(out, hl, 250);//hal aan
+		interval(pg, random(2, 5), 0);
+		break;
+	case 4:
+		LED_setLed(out, wc, 250);//WC aan
+		interval(pg, random(10,20), 0);
 		break;
 	case 5:
-		LED_setLed(1, 2, 0); //(1)WC uit
-		interval(10, random(20,60), 3);
+		LED_setLed(out, wc, 0);// WC uit
+		interval(pg, random(2,5), 0);
 		break;
 	case 6:
-			LED_setLed(1, 0, 250); //(1)slaapkamer aan
-			interval(10, 5, 0);
+		LED_setLed(out, hl, 0);//hal uit
+		interval(pg, random(10,60), 0);
 		break;
 	case 7:
-		LED_setLed(1, 2, 250); //(1)WC aan
-		interval(10, random(10, 20), 0);
+		LED_setLed(out, hl, 250);//hal aan 
+		interval(pg, random(2, 4), 0);
 		break;
 	case 8:
-		LED_setLed(1, 1, 2); //(1)huiskamer zwak
-		interval(10, random(5,15), 0);
+		LED_setLed(out,wc, 250);//wc aan
+		interval(pg, random(10,20), 0);
 		break;
 	case 9:
-		LED_setLed(1, 2, 0); //(1)WC uit
-		interval(10, random(10,20), 0);
+		LED_setLed(out, wc, 0);//WC uit
+		interval(pg, random(2,6), 0);
 		break;
-
 	case 10:
-		LED_setLed(1, 0, 5); //(1) slaapkamer zwak
-		interval(10, random(5,15), 0);
+		LED_setLed(out, hl, 0);//hal uit
+		interval(pg, random(2, 10), 3);
 		break;
 	case 11:
-		LED_setLed(1, 0, 0); //slaapkamer uit
-		interval(10, random(10, 20), 1);
+		LED_setLed(out, sk, 250);//slaapkamer aan
+		interval(pg, random(5,20), 0);
 		break;
 	case 12:
-		LED_setLed(1, 2, 255);//wc aan
-		interval(10, random(5, 10), 0);
+		LED_setLed(out, wc, 250); //WC aan
+		interval(pg, random(2,15), 0);
 		break;
 	case 13:
-		LED_setLed(1, 2, 0);//wc uit
-		interval(10, random(5, 10), 0);
+		LED_setLed(out, hl, 3);//hal zwak
+		interval(pg, random(2, 5), 0);
 		break;
 	case 14:
-		LED_setLed(1, 1, 255);//huiskamer aan
-		interval(10, random(10,50 ), 0);
+		LED_setLed(out, hk, random(0,3)); //huiskamer zwak of uit
+		interval(pg, random(2,15), 0);
 		break;
 	case 15:
-		LED_setLed(1, 1, 0);//huiskamer uit
-		interval(10, random(5, 10), 0);
+		LED_setLed(out, wc, 0); //WC uit
+		interval(pg, random(5,20), 0);
+		break;
+	case 16:
+		LED_setLed(out, sk, 2); //slaapkamer zwak
+		interval(pg, random(10,25), 0);
+		break;
+	case 17:
+		LED_setLed(out, sk, 0); //slaapkamer uit
+		interval(pg, random(60, 180), 0);
+		break;
+	case 18:
+		LED_setLed(out, sk, 3); //slaapkamer zwak
+		interval(pg, random(2, 15), 0); 
+		break;
+	case 19:
+		LED_setLed(out, wc, 250); //WC aan
+		interval(pg, random(10, 30), 0); 
+		break;
+	case 20:
+		LED_setLed(out, wc, 0); //WC uit
+		interval(pg, random(2, 15), 0); //wake up sunrise
+		break;
+	case 21:
+		LED_setLed(out, wc, 0); //slaapkamer uit
+		interval(pg, random(20, 60), 1); //wake up sunrise
+		break;
+	case 22:
+		LED_setLed(out, sk, 250); // slaapkamer aan
+		interval(pg, random(5,15), 0);
+		break;
+	case 23:
+		LED_setLed(out, wc, 255);//wc aan
+		interval(pg, random(10,20), 0);
+		break;
+	case 24:
+		LED_setLed(out, wc, 0);//wc uit
+		interval(pg, random(2,5), 0);
+		break;
+	case 25:
+		LED_setLed(out, sk, 0); //slaapkamer uit
+		interval(pg, random(2,5), 0);
+		break;
+	case 26:
+		LED_setLed(out, hk, 255);//huiskamer aan
+		interval(pg, random(15,60), 0);
+		break;
+	case 27:
+		LED_setLed(out, hk, 0);//huiskamer uit
+		interval(pg,random(3,10), 0);
+		break;
+	case 28:
+		LED_setLed(out, hl, 0);//hal uit
+		interval(pg, random(2, 10), 0);
+		break;
+	case 29:
+		LED_setLed(out, bl, 0);//buitenlicht uit
+		interval(pg, 10, 0);
 		break;
 
 	default:
-//reset als volgnummer niet voorkomt
-		prgc[0] = 0;
-		PRG_hr[10] = mt_zononder;
-		PRG_min[10] = random(20, 60);
+//reset startwaardes
 		
+		PRG_hr[pg] = mt_zononder;
+		PRG_min[pg]= random(20, 60);	
+
+
+		
+		Serial.print("stp prgr:  ");
+		Serial.println(pg);
+		Serial.print("Volgnummer nu:  ");
+		Serial.println(PRG_reg[pg]);
+
+		PRG_reg[pg] = 0;
 		break;
 	}
+	PRG_reg[pg]= PRG_reg[pg] << 3;
+
+
+
+	PRG_reg[pg] |= (1 << 2);
 }
-void PRG_huisI() { ////prg 11 prgc[1] output 2
-	/*
-	klein huis huiskamer(1), slaapkamer(0) zolder(2) 
-	*/
-	prgc[1]++;	
-	switch (prgc[1]) {
-	case 1:
-		LED_setLed(2, 1, 250); //huiskamer aan
-		interval(11, random(20,60), 0);
 
-		break;
-	case 2:
-		LED_setLed(2, 2, 250); //zolder aan
-		interval(11, random(15, 120),0);
-		break;
-	case 3:
-		LED_setLed(2, 2, 0); //zolder uit
-		interval(11, random(0,60), 3);
-		break;
-	case 4:
-		LED_setLed(2, 0, 250); //slaapkamer aan
-		interval(11, random(5,20), 0);
-		break;
-	case 5:
-		LED_setLed(2, 1, 2); //huiskamer zwak
-		interval(11, random(5,20), 0);
-		break;
-	case 6:
-		LED_setLed(2, 0, 2); //slaapkamer zwak
-		interval(11, random(5,20),0);
-		break;
-
-	case 7:
-		LED_setLed(2, 0, 0); //slaapkamer uit
-		interval(11, random(0,10), 1); //wakker worden bij zonsopgang
-		break;
-	
-	case 8: //na sunrise
-		LED_setLed(2, 0, 250); //slaapkamer aan
-		interval(11, random(5, 20), 0);
-		break;
-	case 9:
-		LED_setLed(2, 0, 0); //slaapkamer uit
-		interval(11, random(1, 3), 0);
-		break;
-
-	case 10:
-		LED_setLed(2, 1, 250); //huiskamer vol
-		interval(11, random(10, 60), 0);
-		break;
-	case 11:
-		LED_setPix(2, 0, 0, 0); //pixel uit
-		//LED_setLed(2, 1, 0); //huiskamer uit
-		interval(11, 5, 0); //end program
-		break;
-	default: //herstart 
-		prgc[1] = 0;
-		PRG_hr[11] = mt_zononder;
-		PRG_min[11] = random(10, 60);
-		break;
-	}
-	Serial.println(PRG_hr[11]);
-	Serial.println(PRG_min[11]);
-
-}
 void BLD_reset() {
 	//reset time en tellers bij van dag naar nacht schakelen NIET de automatische overgang, dit moet per programma goed worden afgehandeld
 	//op meerdere plekken wordt deze routine aangeroepen, om bovenstaande te realiseren
-	//Serial.println("reset");
-
+	Serial.println("BLD_reset");
 
 			//alle pixels in VL uitzetten
-			for (int i = 0; i < 32; i++) { //BELANGRIJK AANTAL PIXELS GELIJK AAN DECLARATIE
+			for (byte i = 0; i < 32; i++) { //BELANGRIJK AANTAL PIXELS GELIJK AAN DECLARATIE
 				led_vl[i] = 0x000000;
 			}
 			COM_reg |= (1 << 1);
 
-
-	for (byte i = 10; i < 18; i++) {
-		//mogelijke programmaas 10 tot 20 voor verlichting. Later aanpassen
-			
+	for (byte i = 10; i < 11; i++) {
+		//programs building start at sunset			
 			PRG_hr[i] = mt_zononder;
-			PRG_min[i] = random(5, 40);
-			prgc[i-10] = 0; //let op dat deze array ruim genoeg is gedeclareerd!!!!!
+			PRG_min[i] = 10; // random(1, 60);
+			PRG_reg[i] = B00000100;
 	}
 }
 void interval(byte prg,byte tijd,byte type) {
 	//berekend de nieuwe starttijd voor een programma.
 	//type 0=huidige tijd plus interval 1=zonsopgang plus interval 2=zonsondergang plus interval 3=24hr plus interval
 	//check en correct lengte interval meer dan 60minuten.
-	static byte hr = 0;
-	while (tijd > 59) {
+	static byte hr = 0;	
+	PRG_min[prg] = mt_min + tijd;
+	while (PRG_min[prg] > 59) {
+		PRG_min[prg] = PRG_min[prg] - 60;
 		hr++;
-		tijd = tijd - 60;
-	}
-		PRG_min[prg] = mt_min + tijd;
-		if (PRG_min[prg] > 59) {
-			PRG_min[prg] = PRG_min[prg] - 60;
-			hr++;
-		}
-
-
+	}	
 	switch (type) {
 	case 0: //from current time
 
@@ -1969,29 +1958,14 @@ void interval(byte prg,byte tijd,byte type) {
 		if (PRG_hr[prg] > 23)PRG_hr[prg] = PRG_hr[prg] - 24;
 
 		break;
-	case 1: //from sunrise
-		//PRG_min[prg] = tijd;
-		//if (PRG_min[prg] > 59) {
-		//	PRG_min[prg] = PRG_min[prg] - 60;
-		//	hr++;
-		//}
+	case 1: //from sunrise		
 		PRG_hr[prg] = mt_zonop + hr;
 		break;
-	case 2: //from sunset
-		//PRG_min[prg] = tijd;
-		//if (PRG_min[prg] > 59) {
-		//	PRG_min[prg] = PRG_min[prg] - 60;
-		//	hr++;
-		//}
+	case 2: //from sunset		
 		PRG_hr[prg] = mt_zononder + hr;
 		break;
 
-	case 3: //from hr00:00
-			//PRG_min[prg] = mt_min + tijd;
-			//if (PRG_min[prg] > 59) {
-			//	PRG_min[prg] = PRG_min[prg] - 60;
-			//	hr++;
-			//}
+	case 3: //from hr00:00			
 		if (mt_hr >= 0 & mt_hr < mt_zonop) {
 			PRG_hr[prg] = mt_hr + hr;
 		}
@@ -2000,7 +1974,15 @@ void interval(byte prg,byte tijd,byte type) {
 		}
 		break;
 	}	
+
 	hr = 0; //reset uurteller
+	Serial.print("wp prg: ");
+	Serial.println(prg);
+	Serial.print("uur:  ");
+	Serial.println(PRG_hr[prg]);
+	Serial.print("minuut:  ");
+	Serial.println(PRG_min[prg]);
+	Serial.println("-");
 }
 
 void wit(byte led, byte inc, byte mr, byte mg, byte mb,boolean stop) {
