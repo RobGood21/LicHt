@@ -13,11 +13,11 @@ Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichti
 
 //prg_reg   =register booleans for programs, only runtime
 	//bit0=program active 
-	//bit1=active ???free
-	//bit2=Start by model time true is enable, false -disable
-	//bit3=free
-	//bit4==exclusive for program
-	//bit5==exclusive for program
+	//bit1=Start by model time true is enable, false -disable
+	//bit2=exclusive for program
+	//bit3=exclusive for program
+	//bit4=exclusive for program
+	//bit5=exclusive for program
 	//bit6=exclusive for program
 	//bit7=exclusive for program
 
@@ -26,8 +26,8 @@ Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichti
 COM_reg = register for common booleams only in runtime
 	//bit0 =switches between active and model time programs in void COM_ProgramAssign() 
 	//bit1 = flag for request renew FastLed (see void COM_Fastled())
-	//bit2 =free
-	//bit3 =Dag (false) Nacht(true)
+	//bit2 =Dag (false) Nacht(true)
+	//bit3 =
 	//bit4 =Enable normal operation (false), all stop (true), only DCC receive possible
 	//bit5 =Enable normal oparation, waiting for DCC program main adres
 	//bit6 =flag for proces ready
