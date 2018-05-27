@@ -522,43 +522,51 @@ void COM_ps(byte pn) { //ps=program switch
 		case 3:
 			PRG_dld(pn);
 			break;
-	
 
 		case 4:
 			PRG_lightning();
 			break;
 
+			/*
+					case 6:
+						//PRG_las();
+						break;
+					case 9:
+						//PRG_traffic(pn);
+						break;
+			*/
 
-		case 6:
-			//PRG_las();
-			break;
-		case 9:
-			//PRG_traffic(pn);
-			break;
-
-			
 		case 10:
-			PRG_huis(pn,1,1); //=building 1
+			PRG_huis(pn, 1, 1);
 			break;
-
-
-	/*
 		case 11:
-			//PRG_huis(pn,2,1);
+			PRG_huis(pn, 2, 1);
 			break;
 		case 12:
-			//PRG_huis(pn, 3,2);
+			PRG_huis(pn, 3, 2);
 			break;
 		case 13:
-			//PRG_huis(pn, 4,1);
+			PRG_huis(pn, 4, 1);
 			break;
 		case 14:
-			//PRG_huis(pn, 5,4);
+			PRG_huis(pn, 5, 3);
 			break;
 		case 15:
-			//PRG_huis(pn, 6,3);
-			break;	
-*/
+			PRG_huis(pn, 6, 4);
+			break;
+		case 16: //hh1-1
+			PRG_huis(pn, 7, 5);
+			break;
+		case 17: //hh1-2
+			PRG_huis(pn, 8, 1);
+			break;
+		case 18: //hh2-1
+			PRG_huis(pn, 9, 5);
+			break;
+
+		case 19: //hh2-2
+			PRG_huis(pn, 10, 1);
+			break;
 		}
 	}
 }
@@ -1779,35 +1787,41 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 	static byte bl; //buitenlicht
 	static byte hl; //hal
 
-	switch (huis) { //config of every building pixel
-	case 1:
+	switch (huis) { //huis programmaas
+	case 1: //h1-h2-h4
 		hk = 1;
 		sk = 0;
 		wc = 2;
 		bl = 10;
 		hl = 10;
 		break;
-
-	case 2:
+	case 2: //h3
 		hk = 1;
 		sk = 2;
 		wc = 0;
-		bl = 10;
+		bl = 10;		
 		hl = 10;
 		break;
-	case 3:
+	case 3: //h5
 		hk = 1;
 		sk = 0;
-		bl = 2;
 		wc = 10;
-		hl = 10;
-		break;
-	case 4:
-		hk = 1;
-		sk = 0;
+		bl = 10;
 		hl = 2;
+		break;
+	case 4: //h6
+		hk = 1;
+		sk = 0;
 		wc = 10;
-		bl = 10;
+		bl = 2;
+		hl = 10;
+		break;
+	case 5:
+		hk = 2;
+		sk = 10;
+		wc = 10;
+		bl = 0;
+		hl = 1;
 		break;
 	}
 	PRG_reg[pg] ++;
@@ -1961,7 +1975,7 @@ void BLD_reset() {
 			}
 			COM_reg |= (1 << 1);
 
-	for (byte i = 10; i < 11; i++) {
+	for (byte i = 10; i < 20; i++) {
 		//programs building start at sunset			
 			PRG_hr[i] = mt_zononder;
 			PRG_min[i] = 10; // random(1, 60);
@@ -2110,6 +2124,9 @@ void lightningstart(byte kans) { //start lightningeffect op tijd
 	}
 }
 void loop() {
+
+	/*
+	
 	static byte dl;
 //	if (dl != bitRead(COM_reg, 2)) {
 	if (dl!=dagnacht){
@@ -2117,6 +2134,8 @@ void loop() {
 		Serial.print("dagnacht is changed...");
 		Serial.println(dagnacht);
 	}
+*/
+
 	DEK_DCCh();
 COM_Clk();
 COM_ProgramAssign();
