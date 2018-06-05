@@ -7,14 +7,20 @@
  LicHT is a project for full automated lighting of the model railroad, including day and night cyclus.
  Based on WS2811 adressable led control. 
 
+ Vaste waardes:
+ Pin voor daglicht pixels =8
+ Pin voor verlichting pixels=7
+ Aantal pixels in daglicht= 240 (local variable apix)
+
+
 */
 
 #include <FastLED.h>
 #include <eeprom.h>
 
 
-#define LPdl 8 //pin waar de daglicht ledstring op komt
-#define LPvl 7 //pin voor verlichting string
+//#define LPdl 8 //pin waar de daglicht ledstring op komt
+//#define LPvl 7 //pin voor verlichting string
 
 
 byte COM_DCCAdres= 64;// default waarde, programmable only by button 2
@@ -24,18 +30,17 @@ byte COM_DCCAdres= 64;// default waarde, programmable only by button 2
 byte led_al=240; //#500 CV10, aantal leds max 240
 byte tday = 20; //#501 CV4, tday how long is a modeltimeday in minute 24 is good value lager dan 10 werkt het geheel niet goed
 byte CV_wt = 0;//#502 CV6, Weertype
-byte mt_zonop=7; //503
-byte mt_zononder = 21; //504 
+byte mt_zonop=7; //#503
+byte mt_zononder = 21; //#504 
 byte SrS = 25; //#510 CV5, sun rise speed in micros/40 
 
 CRGB led_dl[240]; //max aantal pixels
 CRGB led_vl[32];
 //tbv van prg_lightning
 CRGB led_lgt[12]; //max aantal leds voor bliksem, dit dient  als geheugen voor de 'oude'waarde van de led
-byte lgt_count; //aantal leds gebruikt voor bliksem
+//byte lgt_count; //aantal leds gebruikt voor bliksem
 byte led_vlap[32]; //vlap=verlichting assign program, assign a program to a led
 //byte led_evap[16];//evap=event assign program
-
 
 byte COM_reg; //bit0 test PRG active(true)
 //bit1 free
@@ -44,40 +49,33 @@ byte COM_reg; //bit0 test PRG active(true)
 //bit5 All stop, disable all prgrams for during programming true is disabled false=enabled programming mode
 
 boolean dagnacht = false; //false =dag
-
-
 byte COM_set=0xFF; //default value
 //bit0=Lighting on(true) or off(false)
 byte PRG_reg[32]; //prg_reg 
-//bit0=init 
-//bit1=Start by model time
-//bit2=
-//bit3=free
-//bit4=free
-//bit5=free
-//bit 6 flag voor bereiken eindwaarde
-//bit7=flag end program
-
 byte SW_reg; //register booleans for the switch states
 /*
 bit0 = status switch A0  (dag nacht)
 bit1=status switch A1 (clock/ program)
 */
 
+//**hier kan 32 byte worden gewonnen door uur en minuten in 1 byte samen te voegen.
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
+
+//byte PRG_time[32]; //time next active programstart
+
+
 unsigned long Clk;
 unsigned int mt; //modeltime minute
-byte mt_min=0; //modeltimeclock minutes 
-byte mt_hr=0; //modeltimeclock hours
 
+
+//5-6-2018 variabelen volatile gemaakt, onduidelijk waarom minutes 0-7 niet werden gestart... later wel zonder aanpassing..? 
+volatile byte mt_min; //modeltimeclock minutes 
+volatile byte mt_hr; //modeltimeclock hours
 
 //basic adres, adres Daylight decoder DL +1 
 //VL (verlichting) decoder 16 adresses higher
 //EV (events) decoder 16adresses higher
-
-int FX_adresmin;
-int VL_adresmin;
 
 volatile unsigned long DEK_Tperiode; //laatst gemeten tijd 
 volatile unsigned int DEK_duur; //gemeten duur van periode tussen twee interupts
@@ -99,7 +97,7 @@ void setup() {
 
 	delay(350);
 	Serial.begin(9600);
-	Serial.println("void setup");
+	Serial.println(F("void setup"));
 	
 	MEM_read();
 	
@@ -148,13 +146,14 @@ void setup_prg() {
 	BLD_reset(); //resets the building programs
 }
 void MEM_read() {
+	byte apix = 240;
 	//merk op volgorde van variable instellen is belangrijk, eerst COM_DCCadres en COM_DCCadres instellingen
 	if (EEPROM.read(0) != 0xFF) COM_DCCAdres = EEPROM.read(0);
 	if (EEPROM.read(400) != 0xFF) COM_set = EEPROM.read(400); //#400 COM_set register
 	
 	if (EEPROM.read(500) != 0xFF) led_al = EEPROM.read(500); //aantal pixels in Daglicht
-	FastLED.addLeds<NEOPIXEL, LPdl>(led_dl, led_al);//create strip of 32leds on pin7 'verlichting' Xx leds on pin 8 'Daglicht'
-	FastLED.addLeds<NEOPIXEL, LPvl>(led_vl, 32);//create strip of 32leds on pin7 'verlichting'
+	FastLED.addLeds<NEOPIXEL, 8>(led_dl, led_al);//create strip of 32leds on pin7 'verlichting' Xx leds on pin 8 'Daglicht'
+	FastLED.addLeds<NEOPIXEL, 7>(led_vl, 32);//create strip of 32leds on pin7 'verlichting'
 	
 	if (EEPROM.read(501) != 0xFF) tday = EEPROM.read(501); //duur van model-tijd dag instellen
 	mt = (tday * 1000) / 24;	
@@ -164,7 +163,7 @@ void MEM_read() {
 	if (EEPROM.read(504) != 0xFF) mt_zononder = EEPROM.read(504); //Model-tijd Zonsondergang tijd
 	
 	if (EEPROM.read(510) != 0xFF)SrS = EEPROM.read(510); //speed of sunrise
-	lgt_count = led_al * 5 / 100; //% van leds als lightning
+	//lgt_count = led_al * 5 / 100; //% van leds als lightning
 
 	/*
 	assigns a program outpu number to a led, default is preprogrammed. 
@@ -195,8 +194,8 @@ void MEM_read() {
 	for (int i = 1; i < 33; i++) {
 		if (EEPROM.read(i) < 0xFF) led_vlap[i] = EEPROM.read(i);
 	}
-VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
-FX_adresmin= (COM_DCCAdres * 4) + 33; //VL has 32 adresses.
+//VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
+//FX_adresmin= (COM_DCCAdres * 4) + 33; //VL has 32 adresses.
 
 }
 void MEM_reset(int start,int aantal) {
@@ -410,6 +409,7 @@ void DEK_DCCh() { //handles incoming DCC commands, called from loop()
 	n++;
 	if (n > 6)n = 0; //was > 12
 }
+/*
 void COM_fastled() {
 	
 	//refreshes the pixels in fastled
@@ -420,6 +420,7 @@ void COM_fastled() {
 		COM_reg &=~(1 << 1);
 	}		
 }
+*/
 void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//type=CV(true) or switch(false)
 	//decoder basic adres of decoder 
@@ -441,32 +442,41 @@ void COM_Clk() {
 			//minium timing is an hour modelroad time, faster events will be done on real time
 		Clk = millis();
 		mt_min ++;
+
+		/*
 		if (bitRead(PRG_reg[2], 1) == true) {
-			PINB |= (1 << 3); // toggle led on pin 11, toont dag nacht automatisch
+			 // toggle led on pin 11, toont dag nacht automatisch
 		}
 		else {
 			if (bitRead(PORTB,3)==true) PORTB &= ~(1 << 3);
 		}
-		
+		*/
+
+		//blauwe led altijd als clock loopt...
+		PINB |= (1 << 3);
+
+
 		if (mt_min > 59) {
 			mt_min = 0;
-			mt_hr ++;
+			mt_hr++;
 
 
 			if (mt_hr > 23) {
 				mt_hr = 0;
 			}
-				Serial.print("Modeltijd uur:  ");
-				Serial.println(mt_hr);
-		}
+			Serial.print(F("MT uur:  "));
+			Serial.println(mt_hr);
+		}		
 	}
 }
+
 void COM_ProgramAssign() {
 	//plays, assigns programs only 1 every cycle 
 	//first 64 active programs 1by1 then only 1 not active programs, then 64 active and so on. 	
 	//after start all programs must be passed once
 	static byte pa; //program active
 	static byte pna;//program not active	
+	//static byte temp;
 
 	if (bitRead(COM_reg, 0) == true) { //find active program
 		if (bitRead(PRG_reg[pa], 0) == true) COM_ps(pa);
@@ -477,29 +487,39 @@ void COM_ProgramAssign() {
 		}
 	}
 	else { //find not-active program
-		if (bitRead(PRG_reg[pna], 0) == false & bitRead(PRG_reg[pna], 1) == true & PRG_hr[pna] == mt_hr & PRG_min[pna] == mt_min) {
-			//schakelen op modeltijd, eventuele initialisering van het te starten programma
+/*
+
+		if (temp != mt_min) {
+			//Serial.println(mt_min);
+			temp = mt_min;
+		}
+*/
+
+		if (bitRead(PRG_reg[pna], 0) == false & bitRead(PRG_reg[pna], 1) == true & PRG_hr[pna] == mt_hr & PRG_min[pna] == mt_min) {	
+
+			
+
+		//schakelen op modeltijd, eventuele initialisering van het te starten programma
 			switch (pna) {
 			case 2:
 				//daglicht start via modeltijd....wake up for new sunset/sunrise cycle	
 				if (mt_hr == mt_zonop) {
-					Serial.println("zon op");
-					//COM_reg &= ~(1 << 2);
+					Serial.println(F("Sunrise"));
 					dagnacht = false;
 				}
-				else {
-					//COM_reg |= (1 << 2);				
+				else {		
 					dagnacht = true;
-					Serial.println("zon onder");
+					Serial.println(F("Sunset"));
 				}
-
 				PRG_reg[2] |= (1 << 0); //enable active
 				PRG_reg[2]|= (1 << 7);
+				//nieuw
+				//PRG_reg[2] &= ~(1 << 1); 
 				break;
 
 			default:			
-			Serial.print("mt start: ");
-			Serial.println(pna);
+			//Serial.print(F(": "));
+			//Serial.println(pna);
 			COM_ps(pna);
 			break;
 			}
@@ -527,18 +547,19 @@ void COM_ps(byte pn) { //ps=program switch
 			PRG_lightning();
 			break;
 
-			/*
+/*			
 					case 6:
 						//PRG_las();
 						break;
 					case 9:
 						//PRG_traffic(pn);
 						break;
-			*/
-
+			*/	
 		case 10:
+			//Serial.print("*");
 			PRG_huis(pn, 1, 1);
-			break;
+			break;		
+			
 		case 11:
 			PRG_huis(pn, 2, 1);
 			break;
@@ -563,10 +584,9 @@ void COM_ps(byte pn) { //ps=program switch
 		case 18: //hh2-1
 			PRG_huis(pn, 9, 5);
 			break;
-
 		case 19: //hh2-2
 			PRG_huis(pn, 10, 1);
-			break;
+			break;	
 		}
 	}
 }
@@ -577,7 +597,8 @@ void COM_switch() {
 	static unsigned int pc = 0; //program count
 	static boolean dld = 0;
 	if (millis() - Sw_time >50) { //every xxms
-		if (bitRead(COM_reg, 1) == true) COM_fastled(); //start fastled if 
+
+		//if (bitRead(COM_reg, 1) == true) COM_fastled(); //start fastled if 
 
 		Sw_time = millis(); //reset counter
 		//prgram switch op A1
@@ -647,7 +668,6 @@ void COM_switch() {
 					else {
 						dagnacht = true;
 					}
-
 					PORTB &= ~(1 << 4);
 					PORTB &= ~(1 << 5);
 				}
@@ -658,6 +678,7 @@ void COM_switch() {
 		}
 	}
 }
+
 void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	//application for DCC monitor
 	//dit kan straks weg????? 
@@ -699,6 +720,7 @@ void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port
 	}
 	Serial.println("");
 }
+
 void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	static byte check;
 	static byte mr; //=memorie read
@@ -740,14 +762,18 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 				BLD_reset(); //resets time depended programs	
 				break;
 
+
+
+
+
 			case 2:
 				if (bitRead(PRG_reg[3], 0) == false) { //only when program is in-active
 					if (port == true) {
 						dndirect(1);
-						Serial.println("aan");
+						Serial.println(F("Aan"));
 					}
 					else {
-						Serial.println("uit");
+						Serial.println(F("uit"));
 						dndirect(2);
 					}
 				}
@@ -762,7 +788,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 			check = channel ^ port ^ onoff;
 		}
 		else { //CV
-//Serial.println(decoder);
+
 			switch (cv) {
 			case 2: // reset eeprom
 				switch (value) {
@@ -860,10 +886,9 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 	}
 }
 void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
-	//Verlichting 32leds
-
-	//******AANTALLEN en adressen aanpassen straks....
+	int VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
 	int pixel;
+
 	if (adres >= VL_adresmin & adres < VL_adresmin+32) {
 		if (type == false) {//switch
 			if (port == true) {
@@ -872,7 +897,8 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 			else {
 				led_vl[adres - VL_adresmin] = 0x000000;
 			}
-			COM_fastled();
+			//COM_fastled();
+			FastLED.show();
 		}
 		else {//CV
 			pixel = adres - VL_adresmin;
@@ -939,11 +965,14 @@ void APP_VL(boolean type, int adres, int decoder, int channel, boolean port, boo
 					if (EEPROM.read(pixel) != value) EEPROM.write(pixel, value);
 					break;
 			}
-			COM_fastled();
+
+			//COM_fastled();
+			FastLED.show();
 		}
 	}
 }
 void APP_FX(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
+	byte FX_adresmin = (COM_DCCAdres * 4) + 33; //VL has 32 adresses.
 	if (adres >= FX_adresmin & adres <= FX_adresmin + 4) {
 
 		//if (type == false) {//switch
@@ -970,7 +999,8 @@ void LED_setPix(byte output, byte r,byte g,byte b) {
 	for (byte i = 0; i < 32; i++) { //check all leds in this group
 			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);			
 	}
-	COM_fastled();
+	FastLED.show();
+	//COM_fastled();
 	//COM_reg |= (1 << 1); //starts fastled.show only for slow effects
 }
 void LED_setLed(byte output, byte led, byte value) {
@@ -991,10 +1021,11 @@ void LED_setLed(byte output, byte led, byte value) {
 				}
 			}
 		}
-		COM_reg |= (1 << 1); //starts fastled.show
+		FastLED.show();
+		//COM_reg |= (1 << 1); //starts fastled.show
 	}
 	else {
-		Serial.println(">>");
+		Serial.println(F(">>"));
 	}
 }
 
@@ -1046,15 +1077,7 @@ void LED_confirm() {
 	PORTB &= ~(1 << 3);
 }
 void PRG_dl(byte pn) {
-	//prg_reg 
-	//bit0=init 
-	//bit1=active 
-	//bit2=Start by model time
-	//bit3=free
-	//bit4=free
-	//bit5=
-	//bit 6 flag voor bereiken eindwaarde
-	//bit7=flag end program
+
 	static byte fxb; //hoe ver het effect naar het westen
 	static byte rled[3]; //willekeurige byte
 	static byte dl_sp = 1; 	
@@ -1071,7 +1094,7 @@ void PRG_dl(byte pn) {
 			
 	if (bitRead(PRG_reg[pn], 7) == true){ 	//if true day/night is manually changed by DCC or switch
 
-		//Serial.println("dl reset");
+		//Serial.println(F("dl reset"));
 
 		PRG_reg[pn] &= ~(1 << 7);
 		teller = 0;
@@ -1093,6 +1116,8 @@ void PRG_dl(byte pn) {
 			mt_min = 0;
 		}
 	}
+
+
 	if (micros() - dl_t > (SrS*50)){ //snelheid in stellen met CV5 
 		dl_t = micros();	
 //*****************************switch fase
@@ -1103,14 +1128,15 @@ void PRG_dl(byte pn) {
 				switch (CV_wt) {
 					//0=random 1=sunny 2=clouded 3=miserable weather 4=no effects
 				case 0:
-					weer = random(1, 4); //0-1-2-3 (never 4)					
+					weer = random(1, 4); //0-1-2-3 (never 4)
+					//weer = 3;
 					break;
 				default:
 					weer = CV_wt;
 					break;
 				}
 
-				Serial.print("Weertype: ");
+				Serial.print(F("Weer: "));
 				Serial.println(weer);
 
 				fxb = random(2, led_al * 7 / 10);
@@ -1133,8 +1159,6 @@ void PRG_dl(byte pn) {
 					if (bitRead(COM_reg, 4) == false) {
 						maxclr[2] = random(170, 210);
 						maxclr[0] = maxclr[2] - random(10, 50); maxclr[1] = maxclr[2] - random(0, 30);
-						//Serial.print("rood= ");
-						//Serial.print(maxclr[0]);
 					}
 					else { //no effect
 						maxclr[0] = 240; maxclr[1] = 240; maxclr[2] = 240;
@@ -1271,7 +1295,7 @@ void PRG_dl(byte pn) {
 		case 21:
 			if (ledcount == rled[0] | ledcount == rled[1]) {
 				wit(ledcount, 6, maxclr[0], maxclr[1], maxclr[2], false);
-				COM_fastled();
+				//COM_fastled();
 			}
 			if (ledcount >= led_al) teller++;
 			if (teller > (led_al * 7 / 10)) {
@@ -1294,7 +1318,7 @@ void PRG_dl(byte pn) {
 
 			if (ledcount == rled[0] | ledcount == rled[1] | ledcount == rled[2]) {
 				wit(ledcount, 6, maxclr[0], maxclr[1], maxclr[2], false);
-				COM_fastled();
+				//COM_fastled();
 			}
 			if (ledcount >= led_al) teller++;
 			if (teller > (led_al / 2)) { //var calc in fase 4
@@ -1516,7 +1540,8 @@ void PRG_dl(byte pn) {
 //**********************end switch fase		
 			ledcount++;
 			if (ledcount > led_al){//merk op 1 verder als in de switch case
-				COM_fastled();
+				//COM_fastled();
+				FastLED.show();
 				ledcount = 0;
 				PRG_reg[pn]|= (1 << 6); //flag voor bereiken eindwaarde				
 				rled[0] = random(0, led_al); 
@@ -1539,7 +1564,7 @@ void PRG_dl(byte pn) {
 
 			//STOP PROGRAM (bit7 of register = true)
 			if (bitRead(PRG_reg[pn],7)==true) { //stop this program plus init all variables
-				Serial.println("Stop program");
+				Serial.println(F("Stop prg"));
 				PRG_reg[pn] &= ~(1 << 7);
 				ledcount = 0;
 				dl_sc = 0;
@@ -1552,8 +1577,9 @@ void PRG_dl(byte pn) {
 				//if (bitRead(COM_reg, 2) == false) { //stops flashing led
 				if(dagnacht==false){
 					PORTB |= (1 << 5);
+
 					PRG_hr[2] = mt_zononder;
-					PRG_min[2] = 0;
+					PRG_min[2] = 0;					
 				}
 				else {
 					PORTB |= (1 << 4);
@@ -1564,6 +1590,9 @@ void PRG_dl(byte pn) {
 	}
 }
 void PRG_lightning() { //Programnummer=4
+byte lgt_count = led_al * 5 / 100; //% van leds als lightning
+
+
 	static byte lgt_led;
 	static byte lgtfase;
 	static unsigned long time; 
@@ -1589,13 +1618,12 @@ void PRG_lightning() { //Programnummer=4
 			else {
 				it = it + 1500;
 			}			
-		}
-		//Serial.println(mc);		
+		}	
 	}
 	
-	if (bitRead(PRG_reg[4], 3) == false) {  ///hier ziet het fout volgens mij, stond een 1 3 van gemaakt
+	if (bitRead(PRG_reg[4], 1) == false) {  ///hier ziet het fout volgens mij, stond een 1 3 van gemaakt, weer 1 van gemaakt op 3-6
 		PRG_reg[4] &= ~((1 << 1)); //disable modeltijd start    DIT toegevoegd 23/5 maar een keer starten vanuit modeltijd
-		Serial.println("start bliksem");
+		Serial.println(F("flash"));
 
 		PRG_reg[4] |= (1 << 3);
 		PRG_reg[4] |= (1 << 0);//active prg 4
@@ -1605,7 +1633,7 @@ void PRG_lightning() { //Programnummer=4
 		interval = 0;
 		mc = 0;
 		duur =  random(60, 300); //hoe lang het moet onweren
-		Serial.print("Duur: ");
+		Serial.print(F("Duur: "));
 		Serial.println(duur);
 		it = random(6000, 12000);
 
@@ -1631,7 +1659,7 @@ void PRG_lightning() { //Programnummer=4
 				}
 				interval = random(10, 200);//stoptijd instellen
 				lgtfase = 20;
-				COM_fastled();
+				//COM_fastled();
 				break;
 
 			case 20:
@@ -1649,13 +1677,14 @@ void PRG_lightning() { //Programnummer=4
 							PRG_reg[4] &= ~((1 << 0));
 							PRG_reg[4] &= ~((1 << 3));
 							PRG_reg[4] &= ~((1 << 1)); //disable modeltijd start
-							Serial.println("stop bliksem");
+							Serial.println(F("Flash end"));
 						}
 						else {
 							lgtfase = 0;
 						}
 					}
-					COM_fastled();
+					//COM_fastled();
+					FastLED.show();
 				break;
 			}
 		time = millis();
@@ -1664,31 +1693,35 @@ void PRG_lightning() { //Programnummer=4
 }
 void PRG_dld(byte pn) { //program #3
 	//switches between day and night without sunrise or sunset		
-	static unsigned long t = 0;
-	static byte lc=0;
-	if (millis() - t > 1) {
-		t = millis();
-		//if (bitRead(COM_reg, 2) == false) { //dag
 
+	//static unsigned long t = 0;
+	//static byte lc=0;
+	//if (millis() - t > 10) {
+		//t = millis();
+		
+	//if (bitRead(COM_reg, 2) == false) { //dag
+	for (byte i = 0; i < led_al; i++) {
 		if(dagnacht==false){
-			led_dl[lc] = CRGB(250, 250, 250);
+			led_dl[i] = CRGB(250, 250, 250);
 		}
 		else {//nacht	
-			led_dl[lc] = CRGB(0, 0, 0);
-		}
-		lc++;		
-		if (lc > led_al) {
-			COM_fastled();
-			mt_hr = mt_zonop;
-			//if (bitRead(COM_reg, 2) == true)mt_hr = mt_zononder;
-			if (dagnacht == true) mt_hr = mt_zononder;
-			mt_min = 0;
-			lc = 0;
-			PRG_reg[pn] &= ~(1 << 0); 
-			BLD_reset();
+			led_dl[i] = CRGB(0, 0, 0);
 		}
 	}
+
+		//lc++;		
+		//if (lc > led_al) {
+		mt_hr = mt_zonop;
+		if (dagnacht == true) mt_hr = mt_zononder;
+		mt_min = 0;
+		//lc = 0;
+		PRG_reg[3] &= ~(1 << 0); //set program inactive
+		BLD_reset();
+		//COM_fastled();
+		FastLED.show();
 }
+//}
+//}
 void PRG_traffic(int pn) {
 //verkeerslicht, starts and runs forever...
 	
@@ -1776,16 +1809,18 @@ void PRG_las() { //programma 6
 		}
 	}
 }
-void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=building pixel
-	//start op zonsondergang	
-	//Serial.println(PRG_reg[pg]);
 
-	PRG_reg[pg]=PRG_reg[pg] >> 2; 
-	static byte hk; //huiskamer
-	static byte sk; //slaapkamer
-	static byte wc; //badkamer, wc
-	static byte bl; //buitenlicht
-	static byte hl; //hal
+
+void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=building pixel
+
+	//PRG_reg[pg] &= ~(1 << 1); //reset time start
+
+	PRG_reg[pg] = PRG_reg[pg] >> 2; 
+	byte hk; //huiskamer
+	byte sk; //slaapkamer
+	byte wc; //badkamer, wc
+	byte bl; //buitenlicht
+	byte hl; //hal
 
 	switch (huis) { //huis programmaas
 	case 1: //h1-h2-h4
@@ -1824,14 +1859,17 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		hl = 1;
 		break;
 	}
-	PRG_reg[pg] ++;
-	//Serial.println(PRG_reg[pg]);
+	PRG_reg[pg] = PRG_reg[pg] + 1;
+
 
 	switch (PRG_reg[pg]){ //max 63 stappen...
 	case 1:
+
 		LED_setLed(out, bl, 250);//buitenlicht aan
 		interval(pg, random(5, 15), 0);
 		break;
+
+		
 	case 2:		
 		LED_setLed(out, hk, 250);//huiskamer aan
 		interval(pg,random(10,60), 0);
@@ -1863,7 +1901,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 	case 9:
 		LED_setLed(out, wc, 0);//WC uit
 		interval(pg, random(2,6), 0);
-		break;
+		break;	
 	case 10:
 		LED_setLed(out, hl, 0);//hal uit
 		interval(pg, random(2, 10), 3);
@@ -1943,60 +1981,67 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 	case 29:
 		LED_setLed(out, bl, 0);//buitenlicht uit
 		interval(pg, 10, 0);
-		break;
+		break;	
 
+	
 	case 30: //last step
 			 //reset startwaardes
 		
 		PRG_hr[pg] = mt_zononder;
 		PRG_min[pg]= random(20, 60);	
+
+
 		//***		
-		Serial.print("stp prgr:  ");
+		Serial.print(F("stp prgr:  "));
 		Serial.print(pg);
 		Serial.print(",  ");
-		Serial.print("Volgnummer:  ");
+		Serial.print(F("#:  "));
 		Serial.println(PRG_reg[pg]);
 		//***
 		PRG_reg[pg] = 0;
 		break;
+		
 	}
 	//build program register
 	PRG_reg[pg]= PRG_reg[pg] << 2;
 	PRG_reg[pg] |= (1 << 1);
+	
 }
 
 void BLD_reset() {
 //resets all building vl pixel parameters, after power-up and manual switching between day and night.
-	Serial.println("BLD_reset");
+	Serial.println(F("BLD_reset"));
 
 			//alle pixels in VL uitzetten
 			for (byte i = 0; i < 32; i++) { //BELANGRIJK AANTAL PIXELS GELIJK AAN DECLARATIE
 				led_vl[i] = 0x000000;
 			}
-			COM_reg |= (1 << 1);
+			FastLED.show();
+			//COM_reg |= (1 << 1);
 
-	for (byte i = 10; i < 20; i++) {
+	for (byte i = 10; i < 20; i++) { //3jun2018 10-19 huisprogrammaas 
 		//programs building start at sunset			
 			PRG_hr[i] = mt_zononder;
-			PRG_min[i] = 10; // random(1, 60);
-			PRG_reg[i] = B00000010;
+			PRG_min[i] = random(0, 59); //mag langer naar 60 ofzo
+			PRG_reg[i] = 2;
 	}
 }
 void interval(byte prg,byte tijd,byte type) {
+
 	//berekend de nieuwe starttijd voor een programma.
 	//type 0=huidige tijd plus interval 1=zonsopgang plus interval 2=zonsondergang plus interval 3=24hr plus interval
 	//check en correct lengte interval meer dan 60minuten.
-	static byte hr;
-	hr = 0;
-	PRG_min[prg] = mt_min + tijd;
+	byte hr=0;	
+	PRG_min[prg] = mt_min + tijd;	
 	while (PRG_min[prg] > 59) {
 		PRG_min[prg] = PRG_min[prg] - 60;
-		hr++;
+	hr++;
 	}	
 	switch (type) {
 	case 0: //from current time
 		PRG_hr[prg] = mt_hr + hr;
 		if (PRG_hr[prg] > 23)PRG_hr[prg] = PRG_hr[prg] - 24;
+
 		break;
 	case 1: //from sunrise		
 		PRG_hr[prg] = mt_zonop + hr;
@@ -2004,7 +2049,6 @@ void interval(byte prg,byte tijd,byte type) {
 	case 2: //from sunset		
 		PRG_hr[prg] = mt_zononder + hr;
 		break;
-
 	case 3: //from hr00:00			
 		if (mt_hr >= 0 & mt_hr < mt_zonop) {
 			PRG_hr[prg] = mt_hr + hr;
@@ -2015,15 +2059,15 @@ void interval(byte prg,byte tijd,byte type) {
 		break;
 	}	
 
-	Serial.print("Prg: ");
+	Serial.print(F("Prg: "));
 	Serial.print(prg);
 	Serial.print(",  ");
-	Serial.print("uur:  ");
+	Serial.print(F("uur:  "));
 	Serial.print(PRG_hr[prg]);	
 	Serial.print(",  ");
-	Serial.print("minuut:  ");
+	Serial.print(F("minuut:  "));
 	Serial.println(PRG_min[prg]);
-	//Serial.println("-");
+
 }
 
 void wit(byte led, byte inc, byte mr, byte mg, byte mb,boolean stop) {
@@ -2102,18 +2146,20 @@ void dndirect(byte st) { //=dag/nacht 0=toggle 1=day 2=night
 }
 void lightningstart(byte kans) { //start lightningeffect op tijd
 //kans....//	0=nooit, 1=altijd, 2=50%, 3=33%,  4=25%	
-	static byte temp;	
+	 byte temp;	
+
 	if (bitRead(COM_set, 0) == true) { //enable lighting
 		
 		temp = random(1, kans + 1); 
 		if (temp == 1) {
 			temp = 0;
-			Serial.println("onweer");
+			Serial.println(F("onweer"));
 			while (temp != mt_zonop) {
 				temp++;
 			}
 			temp = random(1, temp + 1);
 			PRG_hr[4] = mt_zononder; //set wakeuptime for lightning
+
 			for (int i = 0; i < temp; i++) {
 				PRG_hr[4] = PRG_hr[4] + 1;
 				if (PRG_hr[4] > 23)PRG_hr[4] = 0;
