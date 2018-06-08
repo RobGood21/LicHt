@@ -25,7 +25,7 @@ Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichti
 
 COM_reg = register for common booleams only in runtime
 	//bit0 =switches between active and model time programs in void COM_ProgramAssign() 
-	//bit1 = flag for request renew FastLed (see void COM_Fastled())
+	//bit1 = boolean used in com_switch
 	//bit2 =Dag (false) Nacht(true)
 	//bit3 =
 	//bit4 =Enable normal operation (false), all stop (true), only DCC receive possible
@@ -45,5 +45,6 @@ COM_set =register for general settings, stores and reads from EEPROM #400
 
 Programnummers
 2=dl daglicht prg_dl
-3=dld direct handmatig dag nacht prg_dld
+
 4=lightning prg_lightning 
+10 tm 19 verlichting start vanaf sunset
