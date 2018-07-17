@@ -32,6 +32,10 @@ byte mt_zonop=7; //#503
 byte mt_zononder = 21; //#504 
 byte SrS = 25; //#510 CV5, sun rise speed in micros/40 
 
+//tbv display
+byte shft[2];
+
+
 CRGB led_dl[240]; //max aantal pixels
 CRGB led_vl[32];
 //tbv van prg_lightning
@@ -92,6 +96,7 @@ void setup() {
 	delay(350);
 	Serial.begin(9600);
 	Serial.println(F("void setup"));
+	PORTD = 0; //reset portD
 	
 	MEM_read();
 	
@@ -101,6 +106,13 @@ void setup() {
 
 	DDRC &= ~(1 << 0); //set PINA0 as input
 	DDRC &= ~(1 << 1); //set PINA1 as input
+
+	//tbv clock display
+	DDRD |= (1 << 4); //serial data pin as output (PIN4)
+	DDRD |= (1 << 5); //shift clock output(PIN5)
+	DDRD |= (1 << 6);//Shift latch output(PIN6)
+	GPIOR0 = 0; //general purpose register used for flags and booleans
+
 
 	Clk = millis();	
 	//FastLED.setMaxPowerInVoltsAndMilliamps(5, 7000);	
@@ -573,6 +585,14 @@ void COM_switch() {
 		Sw_time = millis(); //reset counter
 		//prgram switch op A1
 		//tbv leds blinking in programmode, waiting for DCC adres
+
+//************tijdelijk??? starten van shiftfunctie
+		GPIOR0 |= (1 << 1); //enable void DSP_shift
+
+
+
+
+
 		if (bitRead(COM_reg, 5) == true)LED_program();
 		if (bitRead(PINC, 1) == false) { //switch A1 pressed	
 			if (bitRead(SW_reg, 1) == false) {
@@ -1986,6 +2006,72 @@ void BLD_reset() {
 			PRG_reg[i] = 2;
 	}
 }
+void DSP_shift() {
+/*
+functie zet de twee bytes in de beide schuifregisters eerst shft[0] (segment) naar shift 2 daarna shft[1] (digits) naar shift 1
+pin 4 portd4 = data
+pin 5 portd5= shift clock SRCLK
+pin 6 portd6= latch clock RCLK
+
+ */
+	// gebruik general porpose register GPIOR0 = 0;
+
+
+	static byte fase = 0;
+	static byte bitcount = 0;
+
+	switch (fase) {
+	case 0: //start new cycle
+		//GPIOR0 &= ~(1 << 0); //clear bit 0
+		bitcount = 0;
+		fase = 10;
+		break;
+	case 10:
+		if (bitRead(shft[bitRead(GPIOR0, 0)], bitcount) == true){
+			PORTD |= (1 << 4);  
+		}
+		else {
+			PORTD &= ~(1 << 4);
+		}
+		bitcount++;
+
+		if (bitcount > 7) {
+			bitcount = 0;
+			GPIOR0 ^= (1 << 0); //toggle bit 0
+
+			if (bitRead(GPIOR0, 0) == false) {
+				fase = 40;  //make latch puls
+			}
+			else { //next byte
+				fase = 10;
+			}
+		}
+		else {
+			fase = 20;
+		}
+		break;
+
+	case 20: 
+		//shift puls maken,eerst doen op volle snelheid, eventueel kan hier een teller timer tussen komen
+		PORTD |= (1 << 5);
+		fase = 30;
+			break;
+	case 30:
+		PORTD &= ~(1 << 5);
+		fase = 10; //next bit
+		break;
+	case 40:
+		//latch puls maken, eerst volle snelheid
+		PORTD |= (1 << 6);
+		fase = 50;
+		break;
+	case 50:
+		PORTD &= ~(1 << 6);
+		fase = 0;
+		GPIOR0 &= ~(1 << 1); //disable DSP_shift()
+		break;
+	}
+}
 void interval(byte prg,byte tijd,byte type) {
 
 	//berekend de nieuwe starttijd voor een programma.
@@ -2105,6 +2191,5 @@ void loop() {
 COM_Clk();
 COM_ProgramAssign();
 COM_switch();
-
-
+if (bitRead(GPIOR0, 1) == true) DSP_shift();
 }
