@@ -112,6 +112,13 @@ void setup() {
 	DDRD |= (1 << 5); //shift clock output(PIN5)
 	DDRD |= (1 << 6);//Shift latch output(PIN6)
 	GPIOR0 = 0; //general purpose register used for flags and booleans
+	PORTD |= (1 << 5); 
+	PORTD |= (1 << 6);
+
+	//tijdens test
+	//shft[0] = B00000001;
+	//shft[1] = 0;
+	GPIOR0 |= (1 << 1); //enable void DSP_shift een malig
 
 
 	Clk = millis();	
@@ -426,20 +433,18 @@ void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
 }
 void COM_Clk() {	
+	static byte klokteller = 0;
 	if (millis() - Clk > mt & bitRead(COM_reg,5)==false & bitRead(COM_reg,4)==false) { //1 minute in modelrailroad time
 			//modelroad time. 1 day standard 24 minutes. (can be updated by CV, DCC or calculation faster of slower)
 			//minium timing is an hour modelroad time, faster events will be done on real time
 		Clk = millis();
 		mt_min ++;
 
-		/*
-		if (bitRead(PRG_reg[2], 1) == true) {
-			 // toggle led on pin 11, toont dag nacht automatisch
-		}
-		else {
-			if (bitRead(PORTB,3)==true) PORTB &= ~(1 << 3);
-		}
-		*/
+		//tijdelijk tbv clock display
+
+		if (klokteller > 9)klokteller = 0;
+		shft[0] = DSP_digit(klokteller);
+		klokteller++;
 
 		//blauwe led altijd als clock loopt...
 		PINB |= (1 << 3);
@@ -586,8 +591,7 @@ void COM_switch() {
 		//prgram switch op A1
 		//tbv leds blinking in programmode, waiting for DCC adres
 
-//************tijdelijk??? starten van shiftfunctie
-		GPIOR0 |= (1 << 1); //enable void DSP_shift
+		DSP_bit();
 
 
 
@@ -2006,6 +2010,66 @@ void BLD_reset() {
 			PRG_reg[i] = 2;
 	}
 }
+byte DSP_digit(byte dec) {
+	byte digit;
+	
+	switch (dec) {
+	case 0:
+		digit = B11111100;
+		break;	
+	case 1:
+		digit = B01100000;
+		break;
+	case 2:
+		digit = B11011010;
+		break;
+	case 3:
+		digit = B11110010;
+		break;
+	case 4:
+		digit = B01100110;
+		break;
+	case 5:
+		digit = B10110110;
+		break;
+	case 6:
+		digit = B10111110;
+		break;
+	case 7:
+		digit = B11100000;
+		break;
+	case 8:
+		digit = B11111110;
+		break;
+	case 9:
+		digit = B11110110;
+		break;
+	}
+
+	return digit;
+}
+void DSP_bit() {
+	//selects bit and starts shiftout 
+	static byte bc=0;
+	switch (bc) {
+	case 0:
+		shft[1] = B00001110;
+		break;
+	case 1:
+		shft[1] = B00001101;
+		break;
+	case 2:
+		shft[1] = B00001011;
+		break;
+	case 3:
+		shft[1] = B00000111;
+		break;
+	}
+	bc++;
+	if (bc > 3)bc = 0;
+
+	GPIOR0 |= (1 << 1); //enable void DSP_shift
+}
 void DSP_shift() {
 /*
 functie zet de twee bytes in de beide schuifregisters eerst shft[0] (segment) naar shift 2 daarna shft[1] (digits) naar shift 1
@@ -2016,6 +2080,9 @@ pin 6 portd6= latch clock RCLK
  */
 	// gebruik general porpose register GPIOR0 = 0;
 
+	//tijdelijk
+	//shft[1] = B11111110;
+	//shft[0] = B01100000;
 
 	static byte fase = 0;
 	static byte bitcount = 0;
@@ -2033,9 +2100,9 @@ pin 6 portd6= latch clock RCLK
 		else {
 			PORTD &= ~(1 << 4);
 		}
-		bitcount++;
 
-		if (bitcount > 7) {
+		bitcount++;
+		if (bitcount > 8) {
 			bitcount = 0;
 			GPIOR0 ^= (1 << 0); //toggle bit 0
 
@@ -2053,20 +2120,22 @@ pin 6 portd6= latch clock RCLK
 
 	case 20: 
 		//shift puls maken,eerst doen op volle snelheid, eventueel kan hier een teller timer tussen komen
-		PORTD |= (1 << 5);
+		PORTD &= ~(1 << 5);
 		fase = 30;
 			break;
-	case 30:
-		PORTD &= ~(1 << 5);
+	case 30:		
+		PORTD |= (1 << 5);
 		fase = 10; //next bit
 		break;
 	case 40:
 		//latch puls maken, eerst volle snelheid
-		PORTD |= (1 << 6);
+		PORTD &= ~(1 << 6);
+
 		fase = 50;
 		break;
 	case 50:
-		PORTD &= ~(1 << 6);
+		
+		PORTD |= (1 << 6);
 		fase = 0;
 		GPIOR0 &= ~(1 << 1); //disable DSP_shift()
 		break;
