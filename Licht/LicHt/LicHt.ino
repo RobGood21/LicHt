@@ -34,6 +34,7 @@ byte SrS = 25; //#510 CV5, sun rise speed in micros/40
 
 //tbv display
 byte shft[2];
+byte klok[4]; //0=minute low 1=minute dec 2= hr 3=hr dec
 
 
 CRGB led_dl[240]; //max aantal pixels
@@ -119,8 +120,6 @@ void setup() {
 	//shft[0] = B00000001;
 	//shft[1] = 0;
 	GPIOR0 |= (1 << 1); //enable void DSP_shift een malig
-
-
 	Clk = millis();	
 	//FastLED.setMaxPowerInVoltsAndMilliamps(5, 7000);	
 	
@@ -433,34 +432,23 @@ void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
 }
 void COM_Clk() {	
-	static byte klokteller = 0;
+	//static byte klokteller = 0;
 	if (millis() - Clk > mt & bitRead(COM_reg,5)==false & bitRead(COM_reg,4)==false) { //1 minute in modelrailroad time
 			//modelroad time. 1 day standard 24 minutes. (can be updated by CV, DCC or calculation faster of slower)
 			//minium timing is an hour modelroad time, faster events will be done on real time
 		Clk = millis();
 		mt_min ++;
-
-		//tijdelijk tbv clock display
-
-		if (klokteller > 9)klokteller = 0;
-		shft[0] = DSP_digit(klokteller);
-		klokteller++;
-
-		//blauwe led altijd als clock loopt...
 		PINB |= (1 << 3);
-
-
 		if (mt_min > 59) {
 			mt_min = 0;
 			mt_hr++;
-
-
 			if (mt_hr > 23) {
 				mt_hr = 0;
 			}
 			Serial.print(F("MT uur:  "));
-			Serial.println(mt_hr);
-		}		
+			Serial.println(mt_hr);			
+		}	
+		DSP_clock();
 	}
 }
 void COM_ProgramAssign() {
@@ -584,18 +572,21 @@ void COM_ps(byte pn) { //ps=program switch
 }
 void COM_switch() {
 	static long Sw_time = 0;
+	static long DSP_time = 0;
 	static unsigned int count = 0;
 	static unsigned int pc = 0; //program count
-	if (millis() - Sw_time >50) { //every xxms
+
+	if (millis() - DSP_time > 5) {
+		DSP_time = millis();
+		DSP_bit();
+	}
+
+	if (millis() - Sw_time >100) { //every xxms
 		Sw_time = millis(); //reset counter
 		//prgram switch op A1
 		//tbv leds blinking in programmode, waiting for DCC adres
 
-		DSP_bit();
-
-
-
-
+		
 
 		if (bitRead(COM_reg, 5) == true)LED_program();
 		if (bitRead(PINC, 1) == false) { //switch A1 pressed	
@@ -2010,39 +2001,59 @@ void BLD_reset() {
 			PRG_reg[i] = 2;
 	}
 }
+void DSP_clock() {
+	byte singles;
+	singles = mt_min;
+	byte tens = 0;
+	while (singles > 9) {
+		tens++;
+		singles = singles - 10;
+	}
+	klok[0] = DSP_digit(singles);
+	klok[1] = DSP_digit(tens);
+	tens = 0;
+	singles = mt_hr;
+	while (singles > 9) {
+		tens++;
+		singles = singles - 10;
+	}
+	klok[2] = DSP_digit(singles);
+	klok[3] = B00000000;
+	if (tens > 0)klok[3] = DSP_digit(tens);
+}
 byte DSP_digit(byte dec) {
 	byte digit;
 	
 	switch (dec) {
 	case 0:
-		digit = B11111100;
+		digit = B11111101;
 		break;	
 	case 1:
-		digit = B01100000;
+		digit = B01100001;
 		break;
 	case 2:
-		digit = B11011010;
+		digit = B11011011;
 		break;
 	case 3:
-		digit = B11110010;
+		digit = B11110011;
 		break;
 	case 4:
-		digit = B01100110;
+		digit = B01100111;
 		break;
 	case 5:
-		digit = B10110110;
+		digit = B10110111;
 		break;
 	case 6:
-		digit = B10111110;
+		digit = B10111111;
 		break;
 	case 7:
-		digit = B11100000;
+		digit = B11100001;
 		break;
 	case 8:
-		digit = B11111110;
+		digit = B11111111;
 		break;
 	case 9:
-		digit = B11110110;
+		digit = B11110111;
 		break;
 	}
 
@@ -2052,7 +2063,7 @@ void DSP_bit() {
 	//selects bit and starts shiftout 
 	static byte bc=0;
 	switch (bc) {
-	case 0:
+	case 0:		
 		shft[1] = B00001110;
 		break;
 	case 1:
@@ -2065,10 +2076,10 @@ void DSP_bit() {
 		shft[1] = B00000111;
 		break;
 	}
+	shft[0] = klok[bc];
 	bc++;
 	if (bc > 3)bc = 0;
-
-	GPIOR0 |= (1 << 1); //enable void DSP_shift
+	DSP_shift();
 }
 void DSP_shift() {
 /*
@@ -2076,69 +2087,59 @@ functie zet de twee bytes in de beide schuifregisters eerst shft[0] (segment) na
 pin 4 portd4 = data
 pin 5 portd5= shift clock SRCLK
 pin 6 portd6= latch clock RCLK
+*/
 
- */
-	// gebruik general porpose register GPIOR0 = 0;
-
-	//tijdelijk
-	//shft[1] = B11111110;
-	//shft[0] = B01100000;
-
-	static byte fase = 0;
-	static byte bitcount = 0;
-
-	switch (fase) {
-	case 0: //start new cycle
-		//GPIOR0 &= ~(1 << 0); //clear bit 0
-		bitcount = 0;
-		fase = 10;
-		break;
-	case 10:
-		if (bitRead(shft[bitRead(GPIOR0, 0)], bitcount) == true){
-			PORTD |= (1 << 4);  
-		}
-		else {
-			PORTD &= ~(1 << 4);
-		}
-
-		bitcount++;
-		if (bitcount > 8) {
+	byte fase = 0;
+	byte bitcount = 0;
+	for (int i = 0; i < 100; i++) {
+		switch (fase) {
+		case 0: //start new cycle
+			//GPIOR0 &= ~(1 << 0); //clear bit 0
 			bitcount = 0;
-			GPIOR0 ^= (1 << 0); //toggle bit 0
-
-			if (bitRead(GPIOR0, 0) == false) {
-				fase = 40;  //make latch puls
-			}
-			else { //next byte
-				fase = 10;
-			}
-		}
-		else {
-			fase = 20;
-		}
-		break;
-
-	case 20: 
-		//shift puls maken,eerst doen op volle snelheid, eventueel kan hier een teller timer tussen komen
-		PORTD &= ~(1 << 5);
-		fase = 30;
+			fase = 1;
 			break;
-	case 30:		
-		PORTD |= (1 << 5);
-		fase = 10; //next bit
-		break;
-	case 40:
-		//latch puls maken, eerst volle snelheid
-		PORTD &= ~(1 << 6);
+		case 1:
+			if (bitRead(shft[bitRead(GPIOR0, 0)], bitcount) == true) {
+				PORTD |= (1 << 4);
+			}
+			else {
+				PORTD &= ~(1 << 4);
+			}
+			bitcount++;
+			if (bitcount > 8) {
+				bitcount = 0;
+				GPIOR0 ^= (1 << 0); //toggle bit 0
 
-		fase = 50;
-		break;
-	case 50:
-		
-		PORTD |= (1 << 6);
-		fase = 0;
-		GPIOR0 &= ~(1 << 1); //disable DSP_shift()
-		break;
+				if (bitRead(GPIOR0, 0) == false) {
+					fase = 4;  //make latch puls
+				}
+				else { //next byte
+					fase = 1;
+				}
+			}
+			else {
+				fase = 2;
+			}
+			break;
+		case 2:
+			//shift puls maken,eerst doen op volle snelheid, eventueel kan hier een teller timer tussen komen
+			PORTD &= ~(1 << 5);
+			fase = 3;
+			break;
+		case 3:
+			PORTD |= (1 << 5);
+			fase = 1; //next bit
+			break;
+		case 4:
+			//latch puls maken, eerst volle snelheid
+			PORTD &= ~(1 << 6);
+			fase = 5;
+			break;
+		case 5:
+			PORTD |= (1 << 6);
+			i = 101;
+			break;
+		}
 	}
 }
 void interval(byte prg,byte tijd,byte type) {
@@ -2260,5 +2261,4 @@ void loop() {
 COM_Clk();
 COM_ProgramAssign();
 COM_switch();
-if (bitRead(GPIOR0, 1) == true) DSP_shift();
 }
