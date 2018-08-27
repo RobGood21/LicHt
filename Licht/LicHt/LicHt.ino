@@ -476,9 +476,7 @@ void COM_ProgramAssign() {
 		}
 */
 
-		if (bitRead(PRG_reg[pna], 0) == false & bitRead(PRG_reg[pna], 1) == true & PRG_hr[pna] == mt_hr & PRG_min[pna] == mt_min) {	
-
-			
+		if (bitRead(PRG_reg[pna], 0) == false & bitRead(PRG_reg[pna], 1) == true & PRG_hr[pna] == mt_hr & PRG_min[pna] == mt_min) {				
 
 		//schakelen op modeltijd, eventuele initialisering van het te starten programma
 			switch (pna) {
@@ -536,7 +534,6 @@ void COM_ps(byte pn) { //ps=program switch
 						break;
 			*/	
 		case 10:
-			//Serial.print("*");
 			PRG_huis(pn, 1, 1);
 			break;		
 			
@@ -567,6 +564,9 @@ void COM_ps(byte pn) { //ps=program switch
 		case 19: //hh2-2
 			PRG_huis(pn, 10, 1);
 			break;	
+		case 20: //seinhuis
+			PRG_huis(pn, 11, 6);
+			break;
 		}
 	}
 }
@@ -1798,6 +1798,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 	byte wc; //badkamer, wc
 	byte bl; //buitenlicht
 	byte hl; //hal
+	byte dl; //licht wat overdag constant brand.
 
 	switch (huis) { //huis programmaas
 	case 1: //h1-h2-h4
@@ -1806,6 +1807,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		wc = 2;
 		bl = 10;
 		hl = 10;
+		dl = 10; //dl=daglicht, brandt overdag
 		break;
 	case 2: //h3
 		hk = 1;
@@ -1813,6 +1815,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		wc = 0;
 		bl = 10;		
 		hl = 10;
+		dl = 10;
 		break;
 	case 3: //h5
 		hk = 1;
@@ -1820,6 +1823,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		wc = 10;
 		bl = 10;
 		hl = 2;
+		dl = 10;
 		break;
 	case 4: //h6
 		hk = 1;
@@ -1827,6 +1831,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		wc = 10;
 		bl = 2;
 		hl = 10;
+		dl = 10;
 		break;
 	case 5:
 		hk = 2;
@@ -1834,18 +1839,24 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		wc = 10;
 		bl = 0;
 		hl = 1;
+		dl = 10;
+		break;
+	case 6: //seinhuis
+		hk = 0;
+		sk = 10;
+		wc = 10;
+		bl = 10;
+		hl = 2;
+		dl = 1;
 		break;
 	}
 	PRG_reg[pg] = PRG_reg[pg] + 1;
 
 	switch (PRG_reg[pg]){ //max 63 stappen...
 	case 1:
-
 		LED_setLed(out, bl, 250);//buitenlicht aan
 		interval(pg, random(5, 15), 0);
-		break;
-
-		
+		break;			
 	case 2:		
 		LED_setLed(out, hk, 250);//huiskamer aan
 		interval(pg,random(10,60), 0);
@@ -1882,85 +1893,95 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		LED_setLed(out, hl, 0);//hal uit
 		interval(pg, random(2, 10), 3);
 		break;
-	case 11:
+		//na 12 uur
+	case 11: //seinhuis, daglicht uit
+		LED_setLed(out, dl, 5);
+		interval(pg, 2, 0);
+		break;
+
+	case 12:
 		LED_setLed(out, sk, 250);//slaapkamer aan
 		interval(pg, random(5,20), 0);
 		break;
-	case 12:
+	case 13:
 		LED_setLed(out, wc, 250); //WC aan
 		interval(pg, random(2,15), 0);
 		break;
-	case 13:
+	case 14:
 		LED_setLed(out, hl, 3);//hal zwak
 		interval(pg, random(2, 5), 0);
 		break;
-	case 14:
+	case 15:
 		LED_setLed(out, hk, random(0,3)); //huiskamer zwak of uit
 		interval(pg, random(2,15), 0);
 		break;
-	case 15:
+	case 16:
 		LED_setLed(out, wc, 0); //WC uit
 		interval(pg, random(5,20), 0);
 		break;
-	case 16:
+	case 17:
 		LED_setLed(out, sk, 2); //slaapkamer zwak
 		interval(pg, random(10,25), 0);
 		break;
-	case 17:
+	case 18:
 		LED_setLed(out, sk, 0); //slaapkamer uit
 		interval(pg, random(60, 180), 0);
 		break;
-	case 18:
+	case 19:
 		LED_setLed(out, sk, 3); //slaapkamer zwak
 		interval(pg, random(2, 15), 0); 
 		break;
-	case 19:
+	case 20:
 		LED_setLed(out, wc, 250); //WC aan
 		interval(pg, random(10, 30), 0); 
 		break;
-	case 20:
+	case 21:
 		LED_setLed(out, wc, 0); //WC uit
 		interval(pg, random(2, 15), 0); //wake up sunrise
 		break;
-	case 21:
-		LED_setLed(out, sk, 0); //slaapkamer uit
-		interval(pg, random(20, 60), 1); //wake up sunrise
-		break;
 	case 22:
+		LED_setLed(out, sk, 0); //slaapkamer uit
+		interval(pg, random(10, 30), 1); //wake up sunrise
+		break;
+		//na zonsopgang
+	case 23:
+		LED_setLed(out, dl, 250); //daglicht aan
+		interval(pg, random(10, 30), 1); //wake up sunrise
+		break;
+	case 24:
 		LED_setLed(out, sk, 250); // slaapkamer aan
 		interval(pg, random(5,15), 0);
 		break;
-	case 23:
+	case 25:
 		LED_setLed(out, wc, 255);//wc aan
 		interval(pg, random(10,20), 0);
 		break;
-	case 24:
+	case 26:
 		LED_setLed(out, wc, 0);//wc uit
 		interval(pg, random(5,12), 0);
 		break;
-	case 25:
+	case 27:
 		LED_setLed(out, sk, 0); //slaapkamer uit
 		interval(pg, random(5,15), 0);
 		break;
-	case 26:
+	case 28:
 		LED_setLed(out, hk, 255);//huiskamer aan
 		interval(pg, random(15,60), 0);
 		break;
-	case 27:
+	case 29:
 		LED_setLed(out, hk, 0);//huiskamer uit
 		interval(pg,random(5,15), 0);
 		break;
-	case 28:
+	case 30:
 		LED_setLed(out, hl, 0);//hal uit
 		interval(pg, random(3, 10), 0);
 		break;
-	case 29:
+	case 31:
 		LED_setLed(out, bl, 0);//buitenlicht uit
 		interval(pg, 10, 0);
 		break;	
-
 	
-	case 30: //last step
+	case 32: //last step
 			 //reset startwaardes
 		
 		PRG_hr[pg] = mt_zononder;
@@ -1978,7 +1999,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		break;
 		
 	}
-	//build program register
+	//rebuild program register
 	PRG_reg[pg]= PRG_reg[pg] << 2;
 	PRG_reg[pg] |= (1 << 1);
 	
@@ -1994,12 +2015,20 @@ void BLD_reset() {
 			FastLED.show();
 			//COM_reg |= (1 << 1);
 
-	for (byte i = 10; i < 20; i++) { //3jun2018 10-19 huisprogrammaas 
+	for (byte i = 10; i < 21; i++) { //3jun2018 10-19 huisprogrammaas 
 		//programs building start at sunset			
 			PRG_hr[i] = mt_zononder;
 			PRG_min[i] = random(0, 59); //mag langer naar 60 ofzo
 			PRG_reg[i] = 2;
 	}
+	//set daglicht starters, voor eerste start na powerup
+	LED_setLed(11, 1, 200);
+
+
+
+
+
+
 }
 void DSP_clock() {
 	byte singles;
