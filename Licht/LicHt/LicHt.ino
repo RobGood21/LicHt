@@ -30,7 +30,7 @@ byte tday = 24; //#501 CV4, tday how long is a modeltimeday in minute 24 is good
 byte CV_wt = 0;//#502 CV6, Weertype
 byte mt_zonop=7; //#503
 byte mt_zononder = 21; //#504 
-byte SrS = 25; //#510 CV5, sun rise speed in micros/40 
+byte SrS = 40; //#510 CV5, sun rise speed in micros/40 
 
 //tbv display
 byte shft[2];
@@ -166,7 +166,10 @@ void MEM_read() {
 	if (EEPROM.read(500) != 0xFF) led_al = EEPROM.read(500); //aantal pixels in Daglicht
 	FastLED.addLeds<NEOPIXEL, 8>(led_dl, led_al);//leds on pin 8 'Daglicht'
 	FastLED.addLeds<NEOPIXEL, 7>(led_vl, 32);//create strip of 32leds on pin7 'verlichting'
-	led_al--; 
+
+	//led_al--; 
+	led_al = 239;
+
 	/*
 	aantal leds = max 240 maar led_al wordt gebruikt als het volgnummer voor de pixel die wordt geadresseerd dit loopt van 0 tot en met 239
 	dus led_al moet 1tje lager worden.	
@@ -1096,12 +1099,21 @@ void PRG_dl(byte pn) {
 	static unsigned long dl_t = 0;	
 	static byte fase = 0; 
 
+
+	//tijdelijk
+	static byte tijdelijk;
+
 	//if(millis()-dl_t > 10){ // oude plek
 		//dl_t = millis();
 		
 	if (micros() - dl_t > (SrS*50)){ //snelheid in stellen met CV5  verplaatst 30aug2018
 		dl_t = micros();
 			
+		if (tijdelijk != fase) {
+			Serial.println(fase);
+			tijdelijk = fase;
+		}
+
 		if (bitRead(PRG_reg[pn], 7) == true){ 	//if true day/night is manually changed by DCC or switch
 			PRG_reg[pn] &= ~(1 << 7);
 			teller = 0;
@@ -1324,7 +1336,7 @@ void PRG_dl(byte pn) {
 			}
 			break;
 			//**********WEER 4
-		case 40: //weertype 4, slecht weer naar donker daglicht
+		case 40: //dull weather
 
 			if (ledcount == rled[0] | ledcount == rled[1] | ledcount == rled[2]) {
 				wit(ledcount, 6, maxclr[0], maxclr[1], maxclr[2], false);
@@ -1335,7 +1347,7 @@ void PRG_dl(byte pn) {
 				teller = 0;
 			}
 			break;
-		case 41: //to full daylight
+		case 41: //fade to full daylight
 			wit(ledcount, 1, maxclr[0], maxclr[1], maxclr[2], true);
 			if (ledcount >= led_al & bitRead(PRG_reg[pn], 6) == true) fase = 1;
 			break;
@@ -1444,15 +1456,14 @@ void PRG_dl(byte pn) {
 
 		case 140: //begin sunset bewolkt weer, geen effecten
 			fase = 141;
-			break;
+				break;
 
 		case 141:
-			zwart(ledcount,10, 30,30,30, true);   //30 was t
-
-	//Serial.println(bitRead(PRG_reg[2], 6));
+			zwart(ledcount,2, 60,60,60, true);
 
 			if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
-		
+			if (ledcount == rled[1])led_dl[ledcount] = CRGB(0, 0, 0);
+
 			if ((ledcount >= led_al) & (bitRead(PRG_reg[2], 6) == true)) {
 				fase = 200;  //was 200? naar blackout
 				//Serial.print("nu....");
@@ -1465,49 +1476,20 @@ void PRG_dl(byte pn) {
 			break;
 
 		case 200: //black out naar nacht
-			fase = 201;
+			fase = 203;
 			teller = 0;
 			break;
 
-		case 201: //reduce pixels to 20% of total pixels
-			//first count active pixels
-			zwart(ledcount, 1, 10, 10, 10, false);
-			if (led_dl[ledcount]) {
-				teller++;
-			}
-			if (ledcount >= led_al) {
-				if (teller > (led_al /4)) {
-					fase = 202;
-					teller = 0;	
-				}
-				else {
-					fase = 203;
-				}			
-			}
-			break;
-
-		case 202:
-			if (rled[0] == ledcount | rled[1]==ledcount | rled[2]==ledcount ) {
-
-				for (byte i = 0; i < 10; i++) {
-					if (led_dl[ledcount + i]) {
-						led_dl[ledcount + i] = 0x000000;
-						i = 20;
-					}
-
-					for (byte i = 0; i <10; i++) {
-						zwart(ledcount + i, 1, 1, 1, 1, false);
-					}
-				}
-			}
-			if (ledcount >= led_al)fase = 201;
-			break;
-
-		case 203:		
+		case 203://sets all leds max value 1		
 			zwart(ledcount, 1, 1, 1, 1, true);
+			if (ledcount == rled[0])led_dl[ledcount] = CRGB(0, 0, 0);
+			if (ledcount == rled[1])led_dl[ledcount] = CRGB(0, 0, 0);
+			if (ledcount == rled[2])led_dl[ledcount] = CRGB(0, 0, 0);
+
 			if (ledcount >= led_al & bitRead(PRG_reg[2], 6) == true)fase = 204;
 			break;	
-		case 204:
+
+		case 204: //clears colors
 			dl_sp = (led_dl[ledcount].r + led_dl[ledcount].g + led_dl[ledcount].b);
 			if (dl_sp == 1 | dl_sp == 2) led_dl[ledcount] = 0x010101;
 			if (ledcount >= led_al) fase = 205;
@@ -1532,7 +1514,7 @@ void PRG_dl(byte pn) {
 			
 				if (ledcount >= led_al) {
 					
-					if (teller > 8)	{ // (led_al / 15)) {
+					if (teller > (led_al/10)){ // (led_al / 15)) {
 						fase = 205;	
 						teller = 0;	
 					}
@@ -1924,7 +1906,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 	switch (PRG_reg[pg]){ //max 63 stappen...
 	case 1:
 		LED_setLed(out, bl, 250);//buitenlicht aan
-		interval(pg, random(5, 15), 0);
+		interval(pg, random(2, 10), 0);
 		break;			
 	case 2:		
 		LED_setLed(out, hk, 250);//huiskamer aan
@@ -2094,7 +2076,7 @@ void BLD_reset() {
 
 	for (byte i = 10; i < 27; i++) { //27
 			PRG_hr[i] = mt_zononder;
-			PRG_min[i] = random(0, 59); //mag langer naar 60 ofzo
+			PRG_min[i] = random(0, 30); 
 			PRG_reg[i] = 2;
 	}
 	//set daglicht starters, voor eerste start na powerup
