@@ -158,7 +158,7 @@ void setup_prg() {
 	BLD_reset(); //resets the building model time depended programs
 }
 void MEM_read() {
-	byte apix = 240;
+	//byte apix = 240;
 	//merk op volgorde van variable instellen is belangrijk, eerst COM_DCCadres en COM_DCCadres instellingen
 	if (EEPROM.read(0) != 0xFF) COM_DCCAdres = EEPROM.read(0);
 	if (EEPROM.read(400) != 0xFF) COM_set = EEPROM.read(400); //#400 COM_set register
@@ -167,8 +167,8 @@ void MEM_read() {
 	FastLED.addLeds<NEOPIXEL, 8>(led_dl, led_al);//leds on pin 8 'Daglicht'
 	FastLED.addLeds<NEOPIXEL, 7>(led_vl, 32);//create strip of 32leds on pin7 'verlichting'
 
-	//led_al--; 
-	led_al = 239;
+	led_al--; 
+	//led_al = 239;
 
 	/*
 	aantal leds = max 240 maar led_al wordt gebruikt als het volgnummer voor de pixel die wordt geadresseerd dit loopt van 0 tot en met 239
@@ -442,15 +442,13 @@ void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff
 }
 void COM_Clk() {	
 	//static byte klokteller = 0;
-	if (millis() - Clk > mt & bitRead(GPIOR0,5)==false & bitRead(GPIOR0,4)==false) { //1 minute in modelrailroad time
+	if (millis() - Clk > mt & bitRead(GPIOR0,6)==false) { // & bitRead(GPIOR0,4)==false) { //1 minute in modelrailroad time
 			//modelroad time. 1 day standard 24 minutes. (can be updated by CV, DCC or calculation faster of slower)
 			//minium timing is an hour modelroad time, faster events will be done on real time
-
-		//Serial.println(millis() - Clk);
-
+		
 		Clk = millis();
 		mt_min ++;
-		PINB |= (1 << 3);
+		//PINB |= (1 << 3); led op pin uitgezet, heeft na display geen functie meer
 		if (mt_min > 59) {
 			mt_min = 0;
 			mt_hr++;
@@ -528,7 +526,7 @@ void COM_ps(byte pn) { //ps=program switch
 	//1-10 daylight and weather 11/30 lighting houses and streetlights  31 > no idea yet
 	//Serial.println(bitRead(PRG_reg[3], 0));
 
-	if (bitRead(GPIOR0, 5) == false & bitRead(GPIOR0,4) ==false) {	//enable normal mode
+	if (bitRead(GPIOR0, 5) == false) { // & bitRead(GPIOR0,4) ==false) {	//enable normal mode
 		switch (pn) {
 		case 2: //schakel daglicht in of uit
 			PRG_dl(pn);
@@ -619,20 +617,22 @@ void COM_switch() {
 		//prgram switch op A1
 		//tbv leds blinking in programmode, waiting for DCC adres
 
-		if (bitRead(GPIOR0, 5) == true)LED_program(); //flashes leds, display "dcc"
+		if (bitRead(GPIOR0, 5) == true) LED_program(); //flashes leds, display "dcc"
 
 		if (bitRead(PINC, 1) == false) { //switch A1 pressed	
 			if (bitRead(SW_reg, 1) == false) {
 				SW_reg |= (1 << 1);				
-				if (bitRead(GPIOR0, 5) == true) {
+				if (bitRead(GPIOR0, 5) == true) { //ig s2 is shortly pressed, reset DCC adres proces
 					GPIOR0 &=~(1 << 5); //enable all programs 
+					GPIOR0 &= ~(1 << 6); //enable modeltime clock start time driven cycle
 					LED_off();
 				}
 			}
 			else {
 				pc++;
 				if (pc > 40 & bitRead(GPIOR0,5)==false) { //> 2 seconds
-					GPIOR0 |= (1 << 5); //disable all programs
+					GPIOR0 |= (1 << 5); //disable all programs		
+					GPIOR0 |= (1 << 6); //disable all programs	
 					LED_off();		
 				}
 				if (pc > 250) {
@@ -751,6 +751,16 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 		LED_off();
 		GPIOR0 &= ~(1 << 5);
 		MEM_read();
+
+		/*
+		na uitvoering dus verwerking van het ontvangen dcc adres wordt direct erna ook nog de 
+		poortschakeling hieronder uitgevoerd. Als dit niet wenselijk blijkt moet hier iets voor
+		worden aangepast... 
+		rsa 3sept2018
+		
+		*/
+
+
 	}
 
 	if (decoder==COM_DCCAdres) {
@@ -805,8 +815,11 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 					break;			
 				}
 				break;
+
+/*
 			case 3: //All stop bit 5 van COM_reg
 
+				  nut hiervan is me niet meer duidelijk
 				switch (value) {
 				case 0:
 					GPIOR0 &= ~(1 << 4); ///com_reg bit 5 kun je niet gebruiken is voor wachten op DCC
@@ -820,8 +833,10 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 						
 					break;
 				}
-
+				
 				break;
+*/
+
 			case 4:
 				if (EEPROM.read(501) != value) {
 					EEPROM.write(501, value);
@@ -1049,20 +1064,20 @@ void LED_program() {
 
 			case 1:
 				PORTB |= (1 << 4);
-				s = 2;
-				break;
-
-			case 2:
-				PORTB |=(1 << 3);
 				s = 0;
 				break;
+
+			//case 2:
+				//PORTB |=(1 << 3);
+				//s = 0;
+				//break;
 		}
 }
 void LED_off() {
 	//switches all indicator leds off
 	PORTB &= ~(1 << 5);
 	PORTB &= ~(1 << 4);
-	PORTB &= ~(1 << 3);
+	//PORTB &= ~(1 << 3);
 	if (bitRead(GPIOR0, 5) == false) {
 		switch (bitRead(COM_reg, 2)) { /// 23mei2018********************************************************************************
 		//switch(dagnacht){
@@ -1177,6 +1192,9 @@ void PRG_dl(byte pn) {
 
 				case 3: //bewolkt weer geen kleureffecten
 					fase = 40;
+					/*
+					
+
 					if (bitRead(GPIOR0, 4) == false) {
 						maxclr[2] = random(170, 210);
 						maxclr[0] = maxclr[2] - random(10, 50); maxclr[1] = maxclr[2] - random(0, 30);
@@ -1185,6 +1203,7 @@ void PRG_dl(byte pn) {
 						maxclr[0] = 240; maxclr[1] = 240; maxclr[2] = 240;
 					}
 					teller = 0;
+					*/
 					break;
 
 				case 4:
@@ -1716,23 +1735,27 @@ void dld_com(byte st) { //=dag/nacht 0=toggle 1=day 2=night
 			break;
 		case 1:
 			COM_reg &= ~(1 << 2);
-			//dagnacht = false;
 			break;
 		case 2:
 			COM_reg |= (1 << 2);
-			//dagnacht = true;
 			break;
 		}
 		//PRG_reg[3] |= (1 << 0);//start program 3
 		dld_exe();
 		PRG_reg[2] &= ~(1 << 0); //Stop program 2, 
-		PRG_reg[2] &= ~(1 << 1); //disable modeltime start				
+		//PRG_reg[2] &= ~(1 << 1); //disable modeltime start	
+
+		ClkStop();
+
+
+
+
 
 		if (bitRead(COM_reg, 2) == false) {
 		//if(dagnacht==false){
 			PORTB |= (1 << 5);
 			PORTB &= ~(1 << 4);
-			PRG_reg[4] &= ~(1 << 0);
+			PRG_reg[4] &= ~(1 << 0); //disable lightning
 			PRG_reg[4] &= ~(1 << 3);
 			PRG_reg[4] &= ~(1 << 1);
 		}
@@ -2071,6 +2094,7 @@ void BLD_reset() {
 			for (byte i = 0; i < 32; i++) { //BELANGRIJK AANTAL PIXELS GELIJK AAN DECLARATIE
 				led_vl[i] = 0x000000;
 			}
+			GPIOR0 &= ~(1 << 6); //enable modeltime clock
 			GPIOR0 |= (1 << 7); //request fastled show
 
 
@@ -2152,6 +2176,9 @@ byte DSP_digit(byte dec) {
 		break;
 	case 12: //d
 		digit = B01111010;
+		break;
+	case 13: //-
+		digit = B00000010;
 		break;
 
 
@@ -2384,6 +2411,12 @@ void lightningstart(byte kans) { //start lightningeffect op tijd
 			PRG_min[4] = random(0, 59);
 			PRG_reg[4] |= (1 << 1); //enable modeltijd start
 		}
+	}
+}
+void ClkStop() {
+	GPIOR0 |= (1 << 6); //disable modeltime clock
+	for (byte i = 0; i < 4; i++) {
+		klok[i]=DSP_digit(13);
 	}
 }
 void loop() {

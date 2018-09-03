@@ -60,9 +60,9 @@ bit 0= shift byte (segment, digit) select false = 0(segments)  true= 1(digits)
 bit 1= enable (1) disable (0) shift function start in loop or timer....
 bit 2=
 bit 3=
-bit 4=Enable normal operation (false), all stop (true), only DCC receive possible
+bit 4=efx enabled(0) disabled(1) *******UITGESCHAKELD
 bit 5=Enable normal operation, waiting for DCC program main adres
-bit 6=
+bit 6=Clock enable(0) disable(1)
 bit 7=Fastled request
 
 display segments op shft[0]  for pin layout see EAGLE document LicHt.SCH
