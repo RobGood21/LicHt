@@ -33,7 +33,7 @@ COM_reg = register for common booleams only in runtime
 	//bit4 =
 	//bit5 =
 	//bit6 =flag for proces ready
-	//bit7 =free
+	//bit7 =used for cv received confirm in display
 
 COM_set =register for general settings, stores and reads from EEPROM #400
 	//bit0 =Disable all sunrise and sunset effects (false) effects enabled(true)
@@ -60,7 +60,7 @@ bit 0= shift byte (segment, digit) select false = 0(segments)  true= 1(digits)
 bit 1= enable (1) disable (0) shift function start in loop or timer....
 bit 2=
 bit 3=
-bit 4=efx enabled(0) disabled(1) *******UITGESCHAKELD
+bit 4=efx enabled(0) disabled(1) *******UITGESCHAKELD ????????
 bit 5=Enable normal operation, waiting for DCC program main adres
 bit 6=Clock enable(0) disable(1)
 bit 7=Fastled request
