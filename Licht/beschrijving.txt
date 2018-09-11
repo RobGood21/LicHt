@@ -13,6 +13,18 @@ Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichti
 
 schakelaars twee drukknoppen A0 = functies A1=reset DCC programma enz
 
+SW_reg register voor switch status
+bit0
+bit1
+bit2
+bit3
+bit4
+bit5 = Pixel prgram enabled
+bit6 = Main program enabled
+bit7 = switches 0+1 pressed together
+
+
+
 //prg_reg   =register booleans for programs, only runtime
 	//bit0=program active 
 	//bit1=Start by model time true is enable, false -disable
@@ -28,7 +40,7 @@ schakelaars twee drukknoppen A0 = functies A1=reset DCC programma enz
 COM_reg = register for common booleams only in runtime
 	//bit0 =switches between active and model time programs in void COM_ProgramAssign() 
 	//bit1 = boolean used in com_switch
-	//bit2 =Dag (false) Nacht(true)
+	//bit2 = Dag (false) Nacht(true)
 	//bit3 =free
 	//bit4 =
 	//bit5 =
@@ -62,7 +74,7 @@ bit 2=
 bit 3=
 bit 4=efx enabled(0) disabled(1) *******UITGESCHAKELD ????????
 bit 5=Enable normal operation, waiting for DCC program main adres
-bit 6=Clock enable(0) disable(1)
+bit 6=model time Clock enable(0) disable(1)
 bit 7=Fastled request
 
 display segments op shft[0]  for pin layout see EAGLE document LicHt.SCH

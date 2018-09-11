@@ -49,11 +49,24 @@ byte COM_reg;
 byte COM_set=0xFF; //default value
 //bit0=Lighting on(true) or off(false)
 byte PRG_reg[32]; //prg_reg 
-byte SW_reg; //register booleans for the switch states
+
+
+byte SW_reg; //register booleans for the switch state NODIG????????
 /*
-bit0 = status switch A0  (dag nacht)
-bit1=status switch A1 (clock/ program)
+bit0= switch A0 dag/nacht enable MT clock
+bit1= switch A1 dag/nacht direct disable mt clock
+bit2= switch decrement
+bit3=switch increment
+bit7=flag sw0 + sw1 pressed
+
+
+
 */
+byte SW_old;
+byte SW_new;
+byte SW_change;
+unsigned long Sw_time;
+byte SW_count;
 
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
@@ -100,8 +113,10 @@ void setup() {
 	DDRB |= (1 << 4);  //Pin12 als output
 	DDRB |= (1 << 3); //PIN11 as output
 
-	DDRC &= ~(1 << 0); //set PINA0 as input
-	DDRC &= ~(1 << 1); //set PINA1 as input
+	DDRC = 0;
+	SW_old = PINC;
+	//DDRC &= ~(1 << 0); //set PINA0 as input
+	//DDRC &= ~(1 << 1); //set PINA1 as input
 
 	//tbv clock display
 	DDRD |= (1 << 4); //serial data pin as output (PIN4)
@@ -122,7 +137,7 @@ void setup() {
 	mt_hr = mt_zonop;
 	mt_min = 0;
 
-	randomSeed(analogRead(0));
+	randomSeed(analogRead(A5));
 
 	//FastLED.setMaxPowerInVoltsAndMilliamps(5, 8000);	
 	//FastLED.setBrightness (255); //beter niet
@@ -212,6 +227,8 @@ void MEM_read() {
 	//huis1					10					1						0	
 	//PRG_traffic			12					niet bepaald						niet bepaald
 
+
+	/*
 //default pixel=program
 	for (int i = 0; i < 32; i++) {
 		led_vlap[i] = i;
@@ -221,6 +238,17 @@ void MEM_read() {
 	//geheugen toewijzing pixel aan programma nummer nu max 32 pixels
 	for (int i = 0; i < 32; i++) {
 		if (EEPROM.read(i) < 0xFF) led_vlap[i] = EEPROM.read(i);
+	}
+*/
+	//nieuwe vlapper 11sept2018
+	for (int i = 0; i < 32; i++) {
+
+		if (EEPROM.read(i) == 0xFF) {
+			Serial.print("write: ");
+			Serial.println(i);
+			EEPROM.write(i, i);			
+		}
+		led_vlap[i] = EEPROM.read(i);
 	}
 }
 void MEM_reset(int start,int aantal) {
@@ -526,7 +554,7 @@ void COM_ProgramAssign() {
 		}
 		COM_reg |= (1 << 0); //next cycle active
 		pna ++;
-		if (pna > 31)pna = 0;
+if (pna > 31)pna = 0;
 	}
 }
 void COM_ps(byte pn) { //ps=program switch
@@ -539,28 +567,28 @@ void COM_ps(byte pn) { //ps=program switch
 		case 2: //schakel daglicht in of uit
 			PRG_dl(pn);
 
-			if (bitRead(PRG_reg[2],1)==true)  Serial.println("start dl");
-			
+			if (bitRead(PRG_reg[2], 1) == true)  Serial.println("start dl");
+
 			break;
 		case 4:
 			PRG_lightning();
 			break;
 
-/*			
-					case 6:
-						//PRG_las();
-						break;
-					case 9:
-						//PRG_traffic(pn);
-						break;
-			*/	
-			
+			/*
+								case 6:
+									//PRG_las();
+									break;
+								case 9:
+									//PRG_traffic(pn);
+									break;
+						*/
+
 		case 10:
 			PRG_huis(pn, 0, 1);
-			break;		
-			
+			break;
+
 		case 11:
-			PRG_huis(pn,1, 1);
+			PRG_huis(pn, 1, 1);
 			break;
 		case 12:
 			PRG_huis(pn, 2, 2);
@@ -585,7 +613,7 @@ void COM_ps(byte pn) { //ps=program switch
 			break;
 		case 19: //hh2-2
 			PRG_huis(pn, 9, 1);
-			break;	
+			break;
 		case 20: //seinhuis
 			PRG_huis(pn, 10, 6);
 			break;
@@ -607,16 +635,179 @@ void COM_ps(byte pn) { //ps=program switch
 		case 26:
 			PRG_huis(pn, 16, 12);
 			break;
-	
+
 		}
 	}
 }
+void COM_black() {
+	//kills all pixels
+	for (byte i = 0; i < led_al; i++) {
+		led_dl[i] = 0x000000;
+		if (i < 32) led_vl[i] = 0x000000;
+	}
+	PORTB &= ~(1 << 5);
+	PORTB &= ~(1 << 4);
 
+	GPIOR0 |= (1 << 7);
+}
 void COM_dsp() {
 
 }
+void COM_sw() {
+	//nieuwe switch function na 8sept2018
+	byte temp;
+	static byte cnt;
+	if (millis() - Sw_time > 100) { //100ms 
+		Sw_time = millis();
+		SW_new = PINC;
+		SW_new = SW_new << 4;
+		SW_new = SW_new >> 4;
+		SW_change = SW_new ^ SW_old;
+
+		if (bitRead(GPIOR0, 5) == true) LED_program();
+		//timer zolang bit7 in sw_reg true
+		if (bitRead(SW_reg, 7) == true) {
+			//bit0-3 =teller, to spare 1 byte of memory
+			cnt++;
+			if (cnt > 50) {
+				Serial.println("nu naar main program");
+				cnt = 0;
+				SW_reg |= (1 << 6); //Main Programming enabled
+				GPIOR0 |= (1 << 6); //disable modeltime clock
+				GPIOR0 |= (1 << 5); //enter DCC receive mode
+				DSP_txt(0);
+
+			}
+		}
+		if (SW_change > 0) {
+			if (bitRead(SW_reg, 7) == false) {				
+				
+				for (byte i = 0; i < 4; i++) {
+					if (bitRead(SW_change, i) == true & (bitRead(SW_new, i) == false)) SW_div(i); //calls if switch is pressed		
+					if (bitRead(SW_reg, 7) == true)i = 5; //exit loop to prevent double run SW_both
+				}
+			}
+			else { //sw0+sw1
+				//chech bit0 and bit1 in changed
+				SW_change = SW_change << 6;
+
+				if (SW_change > 0) { //sw0 or sw1 = released start normal operation
+					Serial.println("Losgelaten");
+					SW_reg &= ~(1 << 7);
+					cnt = 0;
+				}
+			}
+		}
+		SW_old = SW_new;
+	}
+}
+
+void SW_div(byte sw) {
+	Serial.println(sw);
+ //dag nacht enable mt clock, decrement program
+		if (bitRead(PINC, 1) == false & bitRead(PINC,0)==false) { //both switches pressed
+			SW_both();
+		}
+		else {
+			//3 opties wat de switch kan gaan doen
+			if (bitRead(SW_reg, 6) == true) { //main programming
+				SW_mainprg(sw);
+			}
+			else { //pixel program
+				if (bitRead(SW_reg, 5) == true){
+					SW_pixprg(sw);
+				}
+				else { //normaal operation
+					SW_normal(sw);
+				}
+			}
+		}
+}
+void SW_normal(byte sw) {
+	Serial.println("normal");
+	switch (sw) {
+	case 0:
+		COM_reg ^= (1 << 2); //toggle day/night
+		PRG_reg[2] |= (1 << 0); //starts program 2 PRG_dl()
+		PRG_reg[2] |= (1 << 7); //flag for changed
+		BLD_reset();
+
+		break;
+	case 1:
+		dld_com(0);
+		break;
+	case 2:
+		COM_black();		
+		break;
+
+	}
+}
+void SW_pixprg(byte sw) {
+Serial.println("pixprg");
+	switch (sw) {
+	case 0:
+		SW_count--;
+		if (SW_count > 31) SW_count = 31;
+		//DSP_pix(SW_count);
+		break;
+	case 1:
+		SW_count++;
+		if (SW_count > 31) SW_count = 0;
+		
+		break;
+	case 2:
+		led_vlap[SW_count]=led_vlap[SW_count]-1;
+		if (led_vlap[SW_count] > 31)led_vlap[SW_count] = 31;
+		break;
+	case 3:
+		led_vlap[SW_count] = led_vlap[SW_count] + 1;
+		if (led_vlap[SW_count] > 31)led_vlap[SW_count] = 0;
+		break;
+	}
+	DSP_pix(SW_count);
+}
+
+void SW_mainprg(byte sw) {
+	Serial.println("mainprg");
+}
+void SW_both() {
+	Serial.println("alle twee");
+	//twee mogelijkheden of niet in program mode dan daar inzetten, wel in programmode eruit halen
+	if (bitRead(SW_reg, 6) == true | bitRead(SW_reg, 5) == true) {
+		Serial.println("reset");
+		SW_save(); //save changes
+		SW_reg = 0;
+		
+		PRG_reg[2] |= (1 << 0); //activate program dl
+		GPIOR0 &= ~(1 << 6); //enable modeltime clock
+		GPIOR0 &= ~(1 << 5); //disable dcc mode
+	}
+	else {
+	SW_reg |= (1 << 7);
+	//hier komt afhandeling bij dubbel druk, 1x kort is start pixelprogram, of cancel programmaas. Main program wordt gestart in de timer in COM_sw
+	SW_reg |= (1 << 5); //enable pixel programming
+	GPIOR0 |= (1 << 6); //disable model time clock
+	PRG_reg[2] &= ~(1 << 0); //set program 2 inactive
+	COM_black(); 
+	SW_count = 0;
+	DSP_pix(SW_count);
+
+	}
+}
+void SW_save() {
+	//saves pixel/program changes
+	for (byte i = 0; i < 32; i++) {
+
+		if (EEPROM.read(i) != led_vlap[i]) {
+			Serial.println(i);
+			EEPROM.write(i, led_vlap[i]);
+		}
+	}
+}
 void COM_switch() {
-	static long Sw_time = 0;	
+	//oude switch function voor 8sept2018
+
+	static long Sw_time = 0;
 	static unsigned int count = 0;
 	static unsigned int pc = 0; //program count
 
@@ -658,7 +849,7 @@ void COM_switch() {
 		}
 
 
-		//test switch A0 dag/nacht
+		//switch A0 dag/nacht
 		if (bitRead(PINC, 0) == false) { //switch A0 pressed			
 			if (bitRead(SW_reg, 0) == false) {
 					SW_reg |= (1 << 0); //set switchstate
@@ -761,6 +952,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 		GPIOR0 &= ~(1 << 6); //enable modeltime clock
 		MEM_read();
 
+
 		/*
 		na uitvoering dus verwerking van het ontvangen dcc adres wordt direct erna ook nog de 
 		poortschakeling hieronder uitgevoerd. Als dit niet wenselijk blijkt moet hier iets voor
@@ -768,7 +960,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 		rsa 3sept2018
 		
 		*/
-
+		channel = 5; //to prevent unwanted events, channel 5 cannot be executed
 
 	}
 
@@ -1103,31 +1295,13 @@ void LED_setLed(byte output, byte led, byte value) {
 	}
 }
 void LED_program() {
-	static byte s=0;
-	LED_off();
-	klok[3] = DSP_digit(10);
-	klok[2] = DSP_digit(12);
-	klok[1] = DSP_digit(11);
-	klok[0] = DSP_digit(11);
-
-
-	
-		switch (s) {
-			case 0:
-				PORTB |= (1 << 5);
-				s = 1;
-				break;
-
-			case 1:
-				PORTB |= (1 << 4);
-				s = 0;
-				break;
-
-			//case 2:
-				//PORTB |=(1 << 3);
-				//s = 0;
-				//break;
-		}
+	PINB |= (1 << 5); 
+	if (bitRead(PORTB, 5) == false) {
+		PORTB |= (1 << 4);
+	}
+	else {
+		PORTB &= ~(1 << 4);
+	}
 }
 void LED_off() {
 	//switches all indicator leds off
@@ -1171,7 +1345,7 @@ void PRG_dl(byte pn) {
 	static byte fase = 0; 
 
 
-	//tijdelijk
+	//tijdelijk, gebruik tijdens debugging
 	static byte tijdelijk;
 
 	//if(millis()-dl_t > 10){ // oude plek
@@ -1181,7 +1355,7 @@ void PRG_dl(byte pn) {
 		dl_t = micros();
 			
 		if (tijdelijk != fase) {
-			Serial.println(fase);
+			//Serial.println(fase);
 			tijdelijk = fase;
 		}
 
@@ -1776,15 +1950,6 @@ void dld_com(byte st) { //=dag/nacht 0=toggle 1=day 2=night
 		switch (st) {
 		case 0:
 			COM_reg ^= (1 << 2); //bit3 false = day, true is night	
-			/*
-			if (dagnacht == false) {
-				dagnacht = true;
-			}
-			else {
-				dagnacht = false;
-			}
-			*/
-
 			break;
 		case 1:
 			COM_reg &= ~(1 << 2);
@@ -1793,21 +1958,14 @@ void dld_com(byte st) { //=dag/nacht 0=toggle 1=day 2=night
 			COM_reg |= (1 << 2);
 			break;
 		}
-		//PRG_reg[3] |= (1 << 0);//start program 3
 		dld_exe();
-		PRG_reg[2] &= ~(1 << 0); //Stop program 2, 
-		//PRG_reg[2] &= ~(1 << 1); //disable modeltime start	
-
+		PRG_reg[2] &= ~(1 << 0); 
 		ClkStop();
-
-
-
-
-
 		if (bitRead(COM_reg, 2) == false) {
 		//if(dagnacht==false){
 			PORTB |= (1 << 5);
 			PORTB &= ~(1 << 4);
+
 			PRG_reg[4] &= ~(1 << 0); //disable lightning
 			PRG_reg[4] &= ~(1 << 3);
 			PRG_reg[4] &= ~(1 << 1);
@@ -1817,6 +1975,7 @@ void dld_com(byte st) { //=dag/nacht 0=toggle 1=day 2=night
 			PORTB &= ~(1 << 5);
 		}
 }
+
 void PRG_traffic(int pn) {
 //verkeerslicht, starts and runs forever...
 	
@@ -2330,6 +2489,42 @@ pin 6 portd6= latch clock RCLK
 		}
 	}
 }
+void DSP_txt(byte txtnum) {
+	switch (txtnum) {
+	case 0: //dcc
+		klok[3] = DSP_digit(10);
+		klok[2] = DSP_digit(12);
+		klok[1] = DSP_digit(11);
+		klok[0] = DSP_digit(11);
+		break;
+	}
+
+}
+void DSP_pix(byte pix) {
+	//fills display in pixel program mode, and burn pixel
+	for (byte i = 0; i < 32; i++) {
+		led_vl[i] = 0x000000;
+	}
+	led_vl[pix] = 0xFFFFFF;
+	GPIOR0 |= (1 << 7);
+	byte tens = 0;
+	byte prg;
+	prg = led_vlap[pix];
+	while (pix > 9) {
+		pix = pix - 10;
+		tens++;
+	}
+	klok[3] = DSP_digit(tens);
+	klok[2] = DSP_digit(pix);
+	tens = 0;
+
+	while (prg > 9) {
+		prg = prg - 10;
+		tens++;
+	}
+	klok[1] = DSP_digit(tens);
+	klok[0] = DSP_digit(prg);
+}
 void interval(byte prg,byte tijd,byte type) {
 
 	//berekend de nieuwe starttijd voor een programma.
@@ -2500,7 +2695,8 @@ COM_ProgramAssign();
 if (millis() - FastClk > 5) {
 	FastClk = millis();
 	COM_Clk();
-	COM_switch();
+	//COM_switch();
+	COM_sw();
 	DSP_bit();
 	if (bitRead(GPIOR0, 7) == true) {
 		FastLED.show();
