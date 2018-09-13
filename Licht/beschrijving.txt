@@ -9,7 +9,7 @@ DEK_reg  bit0=check for correct timing;
 Variabel DEK_monitor toont DCC monitor (true)
 Modeltijd klok mt_min en mt_hr, minuten en uren. na 24 uur reset volgende dag.
 Periode voorlopig ingesteld op constante tday
-Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichting pin6-events
+Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichting pin9 effecten
 
 schakelaars twee drukknoppen A0 = functies A1=reset DCC programma enz
 
@@ -41,7 +41,7 @@ COM_reg = register for common booleams only in runtime
 	//bit0 =switches between active and model time programs in void COM_ProgramAssign() 
 	//bit1 = boolean used in com_switch
 	//bit2 = Dag (false) Nacht(true)
-	//bit3 =free
+	//bit3 = 
 	//bit4 =
 	//bit5 =
 	//bit6 =flag for proces ready

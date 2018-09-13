@@ -40,9 +40,9 @@ CRGB led_dl[240]; //max adressable pixels in daylight not editable
 CRGB led_vl[32]; //max adressable pixels in verlichting not editable
 //tbv van prg_lightning
 CRGB led_lgt[12]; //max aantal leds voor bliksem, dit dient  als geheugen voor de 'oude'waarde van de led
-//byte lgt_count; //aantal leds gebruikt voor bliksem
-byte led_vlap[32]; //vlap=verlichting assign program, assign a program to a led
-//byte led_evap[16];//evap=event assign program
+CRGB led_fx[8]; //array for effects pixels
+byte led_vlap[40]; //vlap=verlichting assign program, assign a program to a pixel
+
 
 byte COM_reg; 
 
@@ -187,8 +187,10 @@ void MEM_read() {
 	if (EEPROM.read(400) != 0xFF) COM_set = EEPROM.read(400); //#400 COM_set register
 	
 	if (EEPROM.read(500) != 0xFF) led_al = EEPROM.read(500); //aantal pixels in Daglicht
+
 	FastLED.addLeds<NEOPIXEL, 8>(led_dl, led_al);//leds on pin 8 'Daglicht'
 	FastLED.addLeds<NEOPIXEL, 7>(led_vl, 32);//create strip of 32leds on pin7 'verlichting'
+	FastLED.addLeds<NEOPIXEL, 9>(led_fx, 8);//create strip of 8 pixels for effects on PIN9
 
 	led_al--; 
 	//led_al = 239;
@@ -241,7 +243,7 @@ void MEM_read() {
 	}
 */
 	//nieuwe vlapper 11sept2018
-	for (int i = 0; i < 32; i++) {
+	for (int i = 0; i < 40; i++) {
 
 		if (EEPROM.read(i) == 0xFF) {
 			Serial.print("write: ");
@@ -473,7 +475,7 @@ void COM_dek(boolean type, int decoder, int channel, boolean port, boolean onoff
 	adres = ((decoder - 1) * 4) + channel;
 	//APP_Monitor(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_COM(type, adres, decoder, channel, port, onoff, cv, value);
-	APP_FX(type, adres, decoder, channel, port, onoff, cv, value);
+	//APP_FX(type, adres, decoder, channel, port, onoff, cv, value);
 	APP_VL(type, adres, decoder, channel, port, onoff, cv, value);
 }
 void COM_Clk() {	
@@ -737,7 +739,10 @@ void SW_normal(byte sw) {
 		dld_com(0);
 		break;
 	case 2:
-		COM_black();		
+		led_fx[0] = 0xFFFFFF;
+		break;
+	case 3:
+		led_fx[0] = 0x000000;
 		break;
 
 	}
@@ -747,21 +752,20 @@ Serial.println("pixprg");
 	switch (sw) {
 	case 0:
 		SW_count--;
-		if (SW_count > 31) SW_count = 31;
-		//DSP_pix(SW_count);
+		if (SW_count > 39) SW_count = 39;
 		break;
 	case 1:
 		SW_count++;
-		if (SW_count > 31) SW_count = 0;
+		if (SW_count > 39) SW_count = 0;
 		
 		break;
 	case 2:
 		led_vlap[SW_count]=led_vlap[SW_count]-1;
-		if (led_vlap[SW_count] > 31)led_vlap[SW_count] = 31;
+		if (led_vlap[SW_count] > 39)led_vlap[SW_count] = 39;
 		break;
 	case 3:
 		led_vlap[SW_count] = led_vlap[SW_count] + 1;
-		if (led_vlap[SW_count] > 31)led_vlap[SW_count] = 0;
+		if (led_vlap[SW_count] > 39)led_vlap[SW_count] = 0;
 		break;
 	}
 	DSP_pix(SW_count);
@@ -791,12 +795,11 @@ void SW_both() {
 	COM_black(); 
 	SW_count = 0;
 	DSP_pix(SW_count);
-
 	}
 }
 void SW_save() {
 	//saves pixel/program changes
-	for (byte i = 0; i < 32; i++) {
+	for (byte i = 0; i < 40; i++) {
 
 		if (EEPROM.read(i) != led_vlap[i]) {
 			Serial.println(i);
@@ -1007,8 +1010,13 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 				else {
 					value = 0;	
 				}
-					for (byte i = 0; i < 32; i++) {
-						led_vl[i] = CRGB(value, value, value);
+					for (byte i = 0; i < 40; i++) {
+						if (i > 31) {
+							led_fx[i - 32] = CRGB(value, value, value);
+						}
+						else {
+							led_vl[i] = CRGB(value, value, value);
+						}						
 					}
 					GPIOR0 |= (1 << 7); //FastLed request
 				break;
@@ -1124,19 +1132,33 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 	byte pixel;
 	byte prg;
 	byte count=0;
+	boolean infx = false;
 
-	if (adres >= VL_adresmin & adres < VL_adresmin+32) {
+	if (adres >= VL_adresmin & adres < VL_adresmin+40) { //32 in vl line, 8 in fx line
 		//byte pixel;
 
 		pixel = adres - VL_adresmin;
+		if (pixel > 31) infx = true;
 
 		if (type == false) {//switch
 			if (port == true) {
-				led_vl[pixel] = 0xFFFFFF; //adres(DCC) minus adresmin geeft hier het pixel nummer in de rij.
+				if (infx == false) {
+					led_vl[pixel] = 0xFFFFFF; //adres(DCC) minus adresmin geeft hier het pixel nummer in de rij.
+				}
+				else {
+					led_fx[pixel - 32] = 0xFFFFFF;
+				}
+				
 			}
 			else {
-				led_vl[pixel] = 0x000000;
+				if (infx == false) {
+					led_vl[pixel] = 0x000000;
+				}
+				else {
+					led_fx[pixel - 32] = 0x000000;
+				}				
 			}
+
 			//display
 			prg = led_vlap[pixel];
 
@@ -1239,29 +1261,6 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 	}
 
 }
-void APP_FX(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
-	byte FX_adresmin = (COM_DCCAdres * 4) + 33; //VL has 32 adresses.
-	if (adres >= FX_adresmin & adres <= FX_adresmin + 4) {
-
-		//if (type == false) {//switch
-		switch (channel) {
-		case 1:
-			if (port == true) {
-				PRG_reg[6] |= (1 << 0);
-			}
-			else {
-				PRG_reg[6] &= ~(1 << 0);
-			}
-			break;
-		case 2:
-			break;
-		case 3:
-			break;
-		case 4:
-			break;
-		}
-	}
-}
 void LED_setPix(byte output, byte r,byte g,byte b) { 
 	//sets new value for pixel RGB
 	for (byte i = 0; i < 32; i++) { //check all leds in this group
@@ -1273,18 +1272,32 @@ void LED_setPix(byte output, byte r,byte g,byte b) {
 void LED_setLed(byte output, byte led, byte value) {
 	//sets new value for 1 othe leds in a pixels
 	if (led < 4) {
-		for (byte i = 0; i < 32; i++) { //check all pixels
+		for (byte i = 0; i < 40; i++) { //check all pixels
 			if (led_vlap[i] == output) {
-				switch (led) {
-				case 0:
-					led_vl[i].r = value;
-					break;
-				case 1:
-					led_vl[i].g = value;
-					break;
-				case 2:
-					led_vl[i].b = value;
-					break;
+				if (i < 32) {
+					switch (led) {
+					case 0:
+						led_vl[i].r = value;
+						break;
+					case 1:
+						led_vl[i].g = value;
+						break;
+					case 2:
+						led_vl[i].b = value;
+						break;
+					}
+				}else {
+					switch (led) {
+					case 0:
+						led_fx[i-32].r = value;
+						break;
+					case 1:
+						led_fx[i-32].g = value;
+						break;
+					case 2:
+						led_fx[i-32].b = value;
+						break;
+					}
 				}
 			}
 		}
@@ -1381,10 +1394,6 @@ void PRG_dl(byte pn) {
 					mt_min = 0;
 				}
 		}
-
-	
-
-
 
 //*****************************switch fase
 		switch (fase) {
@@ -2063,7 +2072,7 @@ void PRG_las() { //programma 6
 	}
 }
 void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=building pixel
-	
+	//max40xoutput 0-39
 	PRG_reg[pg] = PRG_reg[pg] >> 2; 
 
 	byte hk=10; //huiskamer
@@ -2303,13 +2312,20 @@ void BLD_reset() {
 	//Serial.println(F("BLD_reset"));
 
 			//alle pixels in VL uitzetten
-			for (byte i = 0; i < 32; i++) { //BELANGRIJK AANTAL PIXELS GELIJK AAN DECLARATIE
-				led_vl[i] = 0x000000;
+			for (byte i = 0; i < 40; i++) { //BELANGRIJK AANTAL PIXELS GELIJK AAN DECLARATIE
+				if (i < 32) {
+					led_vl[i] = 0x000000;
+				}
+				else {
+					led_fx[i - 32] = 0x000000;
+				}
+				
 			}
+
 			GPIOR0 &= ~(1 << 6); //enable modeltime clock
 			GPIOR0 |= (1 << 7); //request fastled show
 
-
+//PRG_huis programma's starttijd instellen
 	for (byte i = 10; i < 27; i++) { //27
 			PRG_hr[i] = mt_zononder;
 			PRG_min[i] = random(0, 30); 
@@ -2324,8 +2340,6 @@ void BLD_reset() {
 	LED_setLed(15, 1, 200);
 	LED_setLed(15, 0, 200);
 	LED_setLed(16, 1, 200);
-
-
 }
 void DSP_clock() {
 	byte singles;
@@ -2502,14 +2516,26 @@ void DSP_txt(byte txtnum) {
 }
 void DSP_pix(byte pix) {
 	//fills display in pixel program mode, and burn pixel
-	for (byte i = 0; i < 32; i++) {
-		led_vl[i] = 0x000000;
+	for (byte i = 0; i < 40; i++) {
+		if (i < 32) {
+			led_vl[i] = 0x000000;
+		}
+		else {
+			led_fx[i - 32] = 0x000000;
+		}
+		
 	}
-	led_vl[pix] = 0xFFFFFF;
+	if (pix < 32) {
+		led_vl[pix] = 0xFFFFFF;
+	}
+	else {
+		led_fx[pix - 32] = 0xFFFFFF;
+	}	
 	GPIOR0 |= (1 << 7);
 	byte tens = 0;
 	byte prg;
 	prg = led_vlap[pix];
+	
 	while (pix > 9) {
 		pix = pix - 10;
 		tens++;
