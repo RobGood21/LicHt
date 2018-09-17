@@ -58,10 +58,13 @@ COM_set =register for general settings, stores and reads from EEPROM #400
 	//bit7 =free
 
 Programnummers
-2=dl daglicht prg_dl
-
-4=lightning prg_lightning 
-10 tm 19 verlichting start vanaf sunset
+0=dl daglicht prg_dl
+1=lightning prg_lightning 
+2=
+3=
+4=
+5=
+10 tm 19 verlichting start vanaf sunset **onder bewerking
 
 Display clock
 Via twee shift registers SN74HC595 Pin 4 (PD4)=serial data out Pin5(PD5)=SRCLK, Shift clock  Pin6(PD6)=RCLK, latch
@@ -70,12 +73,16 @@ Twee bytes shft[2]  0=segments 1=digits
 general register GPIOR0 
 bit 0= shift byte (segment, digit) select false = 0(segments)  true= 1(digits)
 bit 1= enable (1) disable (0) shift function start in loop or timer....
-bit 2=
+bit 2= 
 bit 3=
 bit 4=efx enabled(0) disabled(1) *******UITGESCHAKELD ????????
 bit 5=Enable normal operation, waiting for DCC program main adres
 bit 6=model time Clock enable(0) disable(1)
 bit 7=Fastled request
+
+Normally fastled is renewd every 100ms 
+fastled request exceptions
+PRG_lightning
 
 display segments op shft[0]  for pin layout see EAGLE document LicHt.SCH
 bit     segment
