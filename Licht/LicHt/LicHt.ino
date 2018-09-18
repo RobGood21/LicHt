@@ -1333,6 +1333,44 @@ void LED_idFxLed(byte out,byte led,boolean id,byte value) {
 					break;
 				}
 			}
+			else { //decrement
+				switch (led) {
+				case 0:
+					if (led_fx[pix].r < value) {
+						led_fx[pix].r = 0;
+						PRG_reg[2] |= (1 << 3);
+					}
+					else {
+						led_fx[pix].r = led_fx[pix].r - value;
+					}
+					
+
+					break;
+				case 1:
+					if (led_fx[pix].g < value) {
+						led_fx[pix].g = 0;
+						//PRG_reg[2] |= (1 << 3);
+					}
+					else {
+						led_fx[pix].g = led_fx[pix].g - value;
+					}
+					break;
+				case 2:
+					if (led_fx[pix].b < value) {
+						led_fx[pix].b = 0;
+						//PRG_reg[2] |= (1 << 3);
+					}
+					else {
+						led_fx[pix].b = led_fx[pix].b - value;
+					}
+					break;
+				}
+
+
+			}
+
+
+
 		}
 	}
 }
@@ -2071,27 +2109,72 @@ void PRG_traffic(int pn) {
 }
 void PRG_las() { 
 	byte out = 32;
-	static byte  count;
-	count ++;
-
+	static byte  burn;
+	static int start;	
 	if (bitRead(PRG_reg[2], 0) == true) { //called from loop()
-		LED_idFxLed(32, 1, 1, 20);
-		LED_idFxLed(32, 0, 1, 5);
-		if (count > 10) {
-		count = random(0,8);
-		PRG_reg[2] ^= (1 << 4);
-			if (bitRead(PRG_reg[2], 4) == true) {
-				//LED_setPix(32, 0, 0, 255);
-				LED_setLed(32, 2, 255);
-			}
-			else {
-				LED_setLed(32, 2,0);
-			}
-			GPIOR0 |= (1 << 7);
+		start ++;
+
+		if (start > 800){
+			start = random(0,750);
+			PRG_reg[2] ^= (1 << 7); //slow on off timer
+			PRG_reg[2] &= ~(1 << 5);
 		}
 
+			if (bitRead(PRG_reg[2], 7) == true) { //burn on
+				burn ++;
+				//LED_idFxLed(32, 1, 1, 1);
+				//LED_idFxLed(32, 0, 1, 2);
+				LED_setLed(32, 0, random(0, 250));
+				LED_setLed(32, 1, random(0,150));
+				if (burn > 10) {
+				
+				PRG_reg[2] ^= (1 << 4);
+					if (bitRead(PRG_reg[2], 4) == true) {
+						burn = random(2, 8);
+						//LED_setPix(32, 0, 0, 255);
+						LED_setLed(32, 2, 255);
+						
+					}
+					else {
+						//LED_setLed(32, 2,0);
+						LED_setPix(32, 0, 0, 0);
+						burn = random(5, 9);
+					}
+					
+				}
+				GPIOR0 |= (1 << 7);
+			}
+			else { //burn off
+				burn ++;
+				if (burn > 10) {
+					burn = 0;
+
+					if (bitRead(PRG_reg[2], 5) == false) { //start cooling down
+						LED_setPix(32, 50, 50, 50);
+						PRG_reg[2] |= (1 << 5);
+						PRG_reg[2] &= ~(1 << 3);
+					}
+					else {
+					
+						if (bitRead(PRG_reg[2], 3) == false) {
+							LED_idFxLed(32, 2, 0, random(5,10));
+							LED_idFxLed(32, 1, 0, 2);
+							LED_idFxLed(32, 0, 0, 1);
+						}
+						else { //next fase
+
+
+						}
+					}
+				}	
+				GPIOR0 |= (1 << 7);
+			}
+			
 	}
 	else { //called from model timer COM_ps()
+		PRG_reg[2] &= ~(1 << 1); //reset model time start
+		//gaat ook als het effect al actief is dus hier toggle van PRG_reg bit 0 is afdoende..toch?
+
 	}
 	
 }
