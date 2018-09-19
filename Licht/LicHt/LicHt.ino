@@ -1137,31 +1137,45 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 	byte count=0;
 	boolean infx = false;
 
-	if (adres >= VL_adresmin & adres < VL_adresmin+40) { //32 in vl line, 8 in fx line
-		//byte pixel;
 
+	if (adres >= VL_adresmin & adres < VL_adresmin + 42) { //32 in vl line, 8 in fx line, 2 in programs on/off
+		//byte pixel;
 		pixel = adres - VL_adresmin;
 		if (pixel > 31) infx = true;
+		if (type == false) {//switch or CV
 
-		if (type == false) {//switch
-			if (port == true) {
-				if (infx == false) {
-					led_vl[pixel] = 0xFFFFFF; //adres(DCC) minus adresmin geeft hier het pixel nummer in de rij.
+			switch (pixel) {
+			case 40: //program 2 Lasser 1
+				if (port == true) {
+					PRG_reg[2] |= (1 << 0);
 				}
 				else {
-					led_fx[pixel - 32] = 0xFFFFFF;
+					//PRG_reg[2] &= ~(1 << 0);
+					PRG_reg[2] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
 				}
-				
+				break;
+
+			
+			default:
+			if (infx == false) {
+				if (port == true) {
+					led_vl[pixel] = 0xFFFFFF;
+				}
+				else {
+					led_vl[pixel] = 0x000000;
+				}
 			}
 			else {
-				if (infx == false) {
-					led_vl[pixel] = 0x000000;
+				if (port == true) {
+					led_fx[pixel - 32] = 0xFFFFFF;
 				}
 				else {
 					led_fx[pixel - 32] = 0x000000;
-				}				
+				}
 			}
-
+			break;
+			
+			}
 			//display
 			prg = led_vlap[pixel];
 
@@ -1174,8 +1188,6 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 			klok[1] = DSP_digit(count);
 			klok[2] = DSP_digit(14);
 			klok[3] = DSP_digit(channel);
-
-			//GPIOR0 |= (1 << 7); //request fastled show
 		}
 		else {//CV
 			//pixel = adres - VL_adresmin;
@@ -1257,13 +1269,11 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 				klok[2] = DSP_digit(10);
 				klok[3] = DSP_digit(10);
 			}
-			
-			
-		}		
-		//GPIOR0 |= (1 << 7); //request fastled show
+		}	
+	}
 	}
 
-}
+
 void LED_setPix(byte output, byte r,byte g,byte b) { 
 	//sets new value for pixel RGB	
 	for (byte i = 0; i < 40; i++) { //check all leds in this group
@@ -2108,19 +2118,38 @@ void PRG_traffic(int pn) {
 	}
 }
 void PRG_las() { 
+	/*
+	PRG_reg 
+	bit0 active
+	bit1 enable/disable
+	bit2
+	bit3 off flag
+	bit4 timer
+	bit5 timer
+	bit6 stop
+	bit7 burn/noburn
+
+*/
 	byte out = 32;
 	static byte  burn;
 	static int start;	
-	if (bitRead(PRG_reg[2], 0) == true) { //called from loop()
+	if (bitRead(PRG_reg[2], 0) == true) { //not called from model time
 		start ++;
 
 		if (start > 800){
-			start = random(0,750);
-			PRG_reg[2] ^= (1 << 7); //slow on off timer
-			PRG_reg[2] &= ~(1 << 5);
-		}
+			start = random(0,750);			
+			
+			
+			if (bitRead(PRG_reg[2], 6) == true) {
+				PRG_reg[2] &= ~(1 << 7);
+			}
+			else {
+				PRG_reg[2] ^= (1 << 7); //slow on off timer
+				PRG_reg[2] &= ~(1 << 5);
+			}
+		}		
 
-			if (bitRead(PRG_reg[2], 7) == true) { //burn on
+		if (bitRead(PRG_reg[2], 7) == true) { //burn on
 				burn ++;
 				//LED_idFxLed(32, 1, 1, 1);
 				//LED_idFxLed(32, 0, 1, 2);
@@ -2132,17 +2161,15 @@ void PRG_las() {
 					if (bitRead(PRG_reg[2], 4) == true) {
 						burn = random(2, 8);
 						//LED_setPix(32, 0, 0, 255);
-						LED_setLed(32, 2, 255);
-						
+						LED_setLed(32, 2, 255);						
 					}
 					else {
 						//LED_setLed(32, 2,0);
 						LED_setPix(32, 0, 0, 0);
 						burn = random(5, 9);
-					}
-					
-				}
-				GPIOR0 |= (1 << 7);
+					}	
+					GPIOR0 |= (1 << 7);
+				}				
 			}
 			else { //burn off
 				burn ++;
@@ -2161,22 +2188,21 @@ void PRG_las() {
 							LED_idFxLed(32, 1, 0, 2);
 							LED_idFxLed(32, 0, 0, 1);
 						}
-						else { //next fase
+						else { //stop program
 
-
+							if (bitRead(PRG_reg[2], 6) == true) {
+								PRG_reg[2] &= ~(1 << 6);
+								PRG_reg[2] &= ~(1 << 0);
+							}
 						}
 					}
 				}	
-				GPIOR0 |= (1 << 7);
-			}
-			
+			}			
 	}
 	else { //called from model timer COM_ps()
 		PRG_reg[2] &= ~(1 << 1); //reset model time start
 		//gaat ook als het effect al actief is dus hier toggle van PRG_reg bit 0 is afdoende..toch?
-
-	}
-	
+	}	
 }
 
 void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=building pixel
