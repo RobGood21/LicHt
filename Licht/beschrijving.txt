@@ -19,8 +19,8 @@ bit1
 bit2
 bit3
 bit4
-bit5 = Pixel prgram enabled
-bit6 = Main program enabled
+bit5 = Pixel prgram active
+bit6 = Main program active
 bit7 = switches 0+1 pressed together
 
 
@@ -49,8 +49,8 @@ COM_reg = register for common booleams only in runtime
 
 COM_set =register for general settings, stores and reads from EEPROM #400
 	//bit0 =Disable all sunrise and sunset effects (false) effects enabled(true)
-	//bit1 =free
-	//bit2 =free
+	//bit1 = lasser 1 modeltime start enable (true)
+	//bit2 = lasser 2 modeltime start enable
 	//bit3 =free
 	//bit4 =free
 	//bit5 =free

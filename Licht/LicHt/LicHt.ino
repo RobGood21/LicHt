@@ -43,7 +43,6 @@ CRGB led_lgt[12]; //max aantal leds voor bliksem, dit dient  als geheugen voor d
 CRGB led_fx[8]; //array for effects pixels
 byte led_vlap[40]; //vlap=verlichting assign program, assign a program to a pixel
 
-
 byte COM_reg; 
 
 byte COM_set=0xFF; //default value
@@ -67,6 +66,7 @@ byte SW_new;
 byte SW_change;
 unsigned long Sw_time;
 byte SW_count;
+byte prgedit;
 
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
@@ -100,8 +100,7 @@ byte DEK_Buf3[6];
 byte DEK_Buf4[6];
 byte DEK_Buf5[6];
 
-void setup() {
-	//test mode
+void setup() {	
 
 	delay(350);
 	Serial.begin(9600);
@@ -149,24 +148,8 @@ void setup() {
 	EICRA |= (1 << 0);//EICRA – External Interrupt Control Register A bit0 > 1 en bit1 > 0 (any change)
 	EICRA &= ~(1 << 1);	//bitClear(EICRA, 1);
 	EIMSK |= (1 << INT0);//bitSet(EIMSK, INT0);//EIMSK – External Interrupt Mask Register bit0 INT0 > 1	
-	setup_prg();
 }
-void setup_prg() {
-	//init of the 32 programs	
-	for (byte i = 0; i < 32; i++) {
-		PRG_reg[i] = B00000000; //init program registers
-		//singles
-		switch (i) {
-		case 2:
-			//wake up program daylight.
-			PRG_reg[0] |= (1 << 0);
-			PRG_reg[0] |= (1 << 7);
-			break;
-		}
-	}
-	//series
-	COM_rt(); //resets the building model time depended programs
-}
+
 void MEM_default() {
 	//read default values
 	COM_DCCAdres = 64; //basic DCC adress
@@ -186,6 +169,36 @@ void MEM_read() {
 	if (EEPROM.read(100) != 0xFF) COM_DCCAdres = EEPROM.read(100);
 	Serial.println(COM_DCCAdres);
 	if (EEPROM.read(400) != 0xFF) COM_set = EEPROM.read(400); //#400 COM_set register
+	for (byte i = 0; i < 8; i++) {
+		/*
+	bit0 =Disable all sunrise and sunset effects (false) effects enabled(true)
+	bit1 = lasser 1 modeltime start enable (true)
+	bit2 = lasser 2 modeltime start enable
+	bit3 =free
+	bit4 =free
+	bit5 =free
+	bit6 =free
+	bit7 =free
+		*/
+		switch (i) {
+		case 1:
+			if (bitRead(COM_set, 1) == true) {
+				PRG_reg[2] |= (1 << 1);
+			}
+			else {
+				PRG_reg[2] &= (1 << 1);
+			}
+			break;
+		case 2:
+			if (bitRead(COM_set, 2) == true) {
+				PRG_reg[3] |= (1 << 1);
+			}
+			else {
+				PRG_reg[3] &= (1 << 1);
+			}
+			break;
+		}
+	}
 	
 	if (EEPROM.read(500) != 0xFF) led_al = EEPROM.read(500); //aantal pixels in Daglicht
 
@@ -253,6 +266,17 @@ void MEM_read() {
 		}
 		led_vlap[i] = EEPROM.read(i);
 	}
+	//setup programs
+	for (byte i = 0; i < 40; i++) {
+		switch (i) {
+		case 0: //daglicht
+			PRG_reg[0] = 0;
+			PRG_reg[0] |= (1 << 0);
+			PRG_reg[0] |= (1 << 7);
+			break;
+		}
+	}
+	COM_rt(); //resets the building model time depended programs
 }
 void MEM_reset(int start,int aantal) {
 	//resets EEprom to 0xFF from start to start+64
@@ -261,6 +285,14 @@ void MEM_reset(int start,int aantal) {
 		if (EEPROM.read(i) < 0xFF)EEPROM.write(i, 0xFF);
 	}
 MEM_read();
+}
+void MEM_change() { //called when mem is changed
+	if (EEPROM.read(400) != COM_set) {
+		EEPROM.write(400, COM_set);
+		Serial.println("save");
+	}
+
+
 }
 ISR(INT0_vect) { //syntax voor een ISR
 				 //isr van PIN2
@@ -690,13 +722,11 @@ void COM_sw() {
 			//bit0-3 =teller, to spare 1 byte of memory
 			cnt++;
 			if (cnt > 50) {
-				Serial.println("nu naar main program");
-				cnt = 0;
-				SW_reg |= (1 << 6); //Main Programming enabled
+				prgedit = 0;
 				GPIOR0 |= (1 << 6); //disable modeltime clock
-				GPIOR0 |= (1 << 5); //enter DCC receive mode
-				DSP_txt(0);
-
+				SW_reg |= (1 << 6); //Main Programming enabled
+				SW_programs();
+				cnt = 0;
 			}
 		}
 		if (SW_change > 0) {
@@ -721,8 +751,43 @@ void COM_sw() {
 		SW_old = SW_new;
 	}
 }
+void SW_programs() {
+	//loads program to be edited	
+	//reset parameters of programs
+	GPIOR0 &= ~(1 << 5); //reset DCC mode
+	switch (prgedit){
+	case 0:
+		GPIOR0 |= (1 << 5); //enter DCC receive mode, see APP_COM 
+		DSP_txt(0);
+		break;
+	case 1: //lasser 1 enable modeltijd 		
+		DSP_txt(2);
+		if (bitRead(PRG_reg[2], 1) == true) {
+			LED_on();
+		}
+		else {
+			LED_off();
+		}		
+		break;
+	case 2: //lasser 2 enable modeltijd
+		DSP_txt(3);
+		if (bitRead(PRG_reg[3], 1) == true) {
+			LED_on();
+		}
+		else {
+			LED_off();
+		}
+		break;
+		
+	default:
+		DSP_txt(100);
+		break;
+	}
+
+
+
+}
 void SW_div(byte sw) {
-	Serial.println(sw);
  //dag nacht enable mt clock, decrement program
 		if (bitRead(PINC, 1) == false & bitRead(PINC,0)==false) { //both switches pressed
 			SW_both();
@@ -793,7 +858,50 @@ Serial.println("pixprg");
 }
 
 void SW_mainprg(byte sw) {
-	Serial.println("mainprg");
+	Serial.println(sw);
+	switch (sw) {
+	case 0:
+		prgedit --;
+		SW_programs();
+		break;
+	case 1:
+		prgedit ++;
+		SW_programs();
+		break;
+	case 2:
+		switch (prgedit) {
+		case 1: //lasser 1 off
+			PRG_reg[2] &= ~(1 << 1); //reset model time start
+			COM_set &= ~(1 << 1);
+			LED_off();
+			break;
+		case 2: //lasser 2 off
+			PRG_reg[3] &= ~(1 << 1); //reset model time start
+			COM_set &= ~(1 << 2);
+			LED_off();
+
+			break;
+
+		}
+		break;
+	case 3:
+		switch (prgedit){
+		case 1: //lasser 1 on
+			PRG_reg[2] |= (1 << 1); //reset model time start
+			COM_set |=(1 << 1);
+			LED_on();
+			break;
+		case 2: //lasser 2 on
+			PRG_reg[3] |= (1 << 1); //reset model time start
+			COM_set |= (1 << 2);
+			LED_on();
+
+			break;
+		}
+
+
+		break;
+	}
 }
 void SW_both() {
 	Serial.println("alle twee");
@@ -819,6 +927,9 @@ void SW_both() {
 	}
 }
 void SW_save() {
+	//save COM_set register
+	MEM_change();
+
 	//saves pixel/program changes
 	for (byte i = 0; i < 40; i++) {
 
@@ -880,12 +991,14 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 	//port 3 ?
 	//port 4 ?
 	//programming mainadres
+	boolean ok;
 	if (bitRead(GPIOR0, 5) == true) { //waiting for DCCadress
 		COM_DCCAdres = decoder;
 		EEPROM.write(100, decoder);
 		LED_off();
 		GPIOR0 &= ~(1 << 5); //enable programs
 		GPIOR0 &= ~(1 << 6); //enable modeltime clock
+		SW_reg = 0; //reset programming modes
 		MEM_read();
 
 
@@ -1047,7 +1160,52 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 					}
 				}
 				break;
-
+			case 32:
+				switch (value) {
+				case 0:
+					PRG_reg[2] &= ~(1 << 1);
+					COM_set &= ~(1 << 1);
+					PRG_reg[2] |= (1 << 6); //request stop
+					PORTB &= ~(1 << 5);
+					PORTB &= ~(1 << 4);
+					ok = true;
+					break;
+				case 1:
+					PRG_reg[2] |= (1 << 1);
+					COM_set |= (1 << 1);
+					PORTB |= (1 << 5);
+					PORTB |= (1 << 4);
+					ok = true;
+					break;
+				}
+				if (ok == true) {
+				DSP_cvtxt(32);
+				MEM_change();	
+				}
+				break;
+			case 33:
+				switch (value) {
+				case 0:
+					PRG_reg[3] &= ~(1 << 1);
+					COM_set &= ~(1 << 2);
+					PRG_reg[3] |= (1 << 6); //request stop
+					PORTB &= ~(1 << 5);
+					PORTB &= ~(1 << 4);
+					ok = true;
+					break;
+				case 1:
+					PRG_reg[3] |= (1 << 1);
+					COM_set |= (1 << 2);
+					PORTB |= (1 << 5);
+					PORTB |= (1 << 4);
+					ok = true;
+					break;
+				}
+				if (ok == true) {
+					DSP_cvtxt(33);
+					MEM_change();
+				}
+				break;
 			}
 		}
 	}
@@ -1204,7 +1362,6 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 	}
 	}
 
-
 void LED_setPix(byte output, byte r,byte g,byte b) { 
 	//sets new value for pixel RGB	
 	for (byte i = 0; i < 40; i++) { //check all leds in this group
@@ -1320,11 +1477,18 @@ void LED_program() {
 		PORTB &= ~(1 << 4);
 	}
 }
+void LED_on() {
+	PORTB |= (1 << 5);
+	PORTB |= (1 << 4);
+}
 void LED_off() {
 	//switches all indicator leds off
 	PORTB &= ~(1 << 5);
 	PORTB &= ~(1 << 4);
 	//PORTB &= ~(1 << 3);
+	/* weggehaald 22sept2018 voor led off en led on functie
+	
+
 	if (bitRead(GPIOR0, 5) == false) {
 		switch (bitRead(COM_reg, 2)) { /// 23mei2018********************************************************************************
 		//switch(dagnacht){
@@ -1336,6 +1500,7 @@ void LED_off() {
 			break;
 		}
 	}
+*/
 }
 void PRG_dl() {
 
@@ -2094,6 +2259,7 @@ void PRG_las(byte prg, byte out) {
 		pk = 1;
 		break;
 	}
+
 	start[pk] ++;
 	if (start[pk] > 800) {
 		start[pk] = random(0, 750);
@@ -2137,7 +2303,7 @@ void PRG_las(byte prg, byte out) {
 					LED_idFxLed(prg, out, 2, 0, random(5, 10));
 					LED_idFxLed(prg, out, 1, 0, 2);
 					LED_idFxLed(prg, out, 0, 0, 1);
-					//Serial.println("sssss");
+
 				}
 				else { //stop program
 					if (bitRead(PRG_reg[prg], 6) == true) {
@@ -2407,12 +2573,13 @@ void COM_rt() { //reset timers
 	for (byte i = 2; i < 10; i++) {
 		switch (i) {
 		case 2:
-			PRG_reg[2]|= (1 << 1); //enable modeltime start
+			//PRG_reg[2]|= (1 << 1); //enable modeltime start
+			//dit in mem_read
 			interval(2, random(30, 90), 1);
 			break;
 
 		case 3:
-			PRG_reg[3] |= (1 << 1); //enable modeltime start
+			//PRG_reg[3] |= (1 << 1); //enable modeltime start
 			interval(3, random(30, 90), 1);
 			break;
 		}
@@ -2511,6 +2678,17 @@ byte DSP_digit(byte dec) {
 	case 16: //V
 		digit = B01111100;
 		break;
+	case 17: //L
+		digit = B00011100;
+		break;
+	case 18: //A
+		digit = B11101110;
+		break;
+	case 19: //S
+		digit = B10110110;
+		break;
+	case 20: //[]
+		digit = B00111010;
 	}
 
 	return digit;
@@ -2605,8 +2783,38 @@ void DSP_txt(byte txtnum) {
 		klok[1] = DSP_digit(11);
 		klok[0] = DSP_digit(11);
 		break;
+	case 2:
+		klok[3] = DSP_digit(17);
+		klok[2] = DSP_digit(18);
+		klok[1] = DSP_digit(19);
+		klok[0] = DSP_digit(1);
+		break;
+	case 3:
+		klok[3] = DSP_digit(17);
+		klok[2] = DSP_digit(18);
+		klok[1] = DSP_digit(19);
+		klok[0] = DSP_digit(2);
+		break;
+	case 100:
+		klok[3] = DSP_digit(20);
+		klok[2] = DSP_digit(20);
+		klok[1] = DSP_digit(20);
+		klok[0] = DSP_digit(20);
+		break;
 	}
+	
 
+}
+void DSP_cvtxt(byte cv) {
+	byte tens = 0;
+	klok[3] = DSP_digit(15);
+	klok[2] = DSP_digit(16);
+	while (cv > 9) {
+		cv = cv - 10;
+		tens++;
+	}
+	klok[1] = DSP_digit(tens);
+	klok[0] = DSP_digit(cv);
 }
 void DSP_pix(byte pix) {
 	//fills display in pixel program mode, and burn pixel
@@ -2789,7 +2997,7 @@ if (millis() - FastClk > 5) {
 	if (bitRead(PRG_reg[2],0)==true) PRG_las(2,32); //Lasser 1 
 	if (bitRead(PRG_reg[3],0)==true) PRG_las(3,33); //Lasser 2 
 
-	if (millis() - flClk > 100 | bitRead(GPIOR0, 7) == true ) {
+	if (millis() - flClk > 100 | bitRead(GPIOR0, 7) == true ) { //time value ? 100
 		GPIOR0 &= ~(1 << 7);
 		flClk = millis();
 		FastLED.show();
