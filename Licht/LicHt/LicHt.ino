@@ -73,7 +73,7 @@ byte PRG_hr[32]; //Time next actice hour
 
 unsigned long Clk;
 unsigned long FastClk;
-unsigned long flClk; //clock for fastled show
+//unsigned long flClk; //clock for fastled show
 unsigned int mt; //modeltime minute
 
 //5-6-2018 variabelen volatile gemaakt, onduidelijk waarom minutes 0-7 niet werden gestart... later wel zonder aanpassing..? 
@@ -104,7 +104,7 @@ void setup() {
 
 	delay(350);
 	Serial.begin(9600);
-	Serial.println(F("void setup"));
+	//Serial.println(F("void setup"));
 	PORTD = 0; //reset portD
 	
 	MEM_read();
@@ -167,7 +167,7 @@ void MEM_read() {
 
 	MEM_default();
 	if (EEPROM.read(100) != 0xFF) COM_DCCAdres = EEPROM.read(100);
-	Serial.println(COM_DCCAdres);
+	//Serial.println(COM_DCCAdres);
 	if (EEPROM.read(400) != 0xFF) COM_set = EEPROM.read(400); //#400 COM_set register
 	for (byte i = 0; i < 8; i++) {
 		/*
@@ -260,8 +260,8 @@ void MEM_read() {
 	for (int i = 0; i < 40; i++) {
 
 		if (EEPROM.read(i) == 0xFF) {
-			Serial.print("write: ");
-			Serial.println(i);
+			//Serial.print("write: ");
+			//Serial.println(i);
 			EEPROM.write(i, i);			
 		}
 		led_vlap[i] = EEPROM.read(i);
@@ -289,7 +289,7 @@ MEM_read();
 void MEM_change() { //called when mem is changed
 	if (EEPROM.read(400) != COM_set) {
 		EEPROM.write(400, COM_set);
-		Serial.println("save");
+		//Serial.println("save");
 	}
 
 
@@ -351,6 +351,9 @@ void DEK_begin() {//runs when bit is corrupted, or command not correct
 	for (int i = 0; i < 6; i++) {
 		DEK_byteRX[i] = 0; //reset receive array
 	}
+
+	// free DCC active flag
+	//GPIOR0 &= ~(1 << 2);
 }
 void DEK_BufCom(boolean CV) { //create command in Buffer
 	byte i = 0;
@@ -619,11 +622,9 @@ void COM_ps(byte pn) { //ps=program switch, mts model time start
 		case 2: //lasser 1
 			break;
 		case 3: //lasser 2
-
 			break;//
-
 		case 4:
-			
+			//PRG_fire();
 			break;
 
 			/*
@@ -742,7 +743,7 @@ void COM_sw() {
 				SW_change = SW_change << 6;
 
 				if (SW_change > 0) { //sw0 or sw1 = released start normal operation
-					Serial.println("Losgelaten");
+					//Serial.println("Losgelaten");
 					SW_reg &= ~(1 << 7);
 					cnt = 0;
 				}
@@ -808,7 +809,7 @@ void SW_div(byte sw) {
 		}
 }
 void SW_normal(byte sw) {
-	Serial.println("normal");
+	//Serial.println("normal");
 	switch (sw) {
 	case 0:
 		COM_reg ^= (1 << 2); //toggle day/night
@@ -821,11 +822,10 @@ void SW_normal(byte sw) {
 		dld_com(0);
 		break;
 	case 2:
-		PRG_reg[3] |= (1 << 0);
+		PRG_reg[4] |= (1 << 0);
 		break;
 	case 3:
-		PRG_reg[3] |= (1 << 6); //request stop
-		//LED_setPix(32, 0, 0, 0);
+		PRG_reg[4] &= ~(1 << 0); 
 		break;
 
 	}
@@ -834,7 +834,7 @@ void SW_normal(byte sw) {
 	//GPIOR0 |= (1 << 7);
 }
 void SW_pixprg(byte sw) {
-Serial.println("pixprg");
+//Serial.println("pixprg");
 	switch (sw) {
 	case 0:
 		SW_count--;
@@ -858,7 +858,7 @@ Serial.println("pixprg");
 }
 
 void SW_mainprg(byte sw) {
-	Serial.println(sw);
+	//Serial.println(sw);
 	switch (sw) {
 	case 0:
 		prgedit --;
@@ -904,10 +904,10 @@ void SW_mainprg(byte sw) {
 	}
 }
 void SW_both() {
-	Serial.println("alle twee");
+	//Serial.println("alle twee");
 	//twee mogelijkheden of niet in program mode dan daar inzetten, wel in programmode eruit halen
 	if (bitRead(SW_reg, 6) == true | bitRead(SW_reg, 5) == true) {
-		Serial.println("reset");
+		//Serial.println("reset");
 		SW_save(); //save changes
 		SW_reg = 0;
 		
@@ -934,7 +934,7 @@ void SW_save() {
 	for (byte i = 0; i < 40; i++) {
 
 		if (EEPROM.read(i) != led_vlap[i]) {
-			Serial.println(i);
+			//Serial.println(i);
 			EEPROM.write(i, led_vlap[i]);
 		}
 	}
@@ -1218,31 +1218,45 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 	boolean infx = false;
 
 
-	if (adres >= VL_adresmin & adres < VL_adresmin + 42) { //32 in vl line, 8 in fx line, 2 in programs on/off
+	if (adres >= VL_adresmin & adres < VL_adresmin + 43) { //32 in vl line, 8 in fx line, 2 in programs on/off
 		//byte pixel;
 		pixel = adres - VL_adresmin;
 		if (pixel > 31) infx = true;
 		if (type == false) {//switch or CV
 
-			switch (pixel) {
+			switch (pixel) { //pixel is hier het DCC ADRES bovenop het main adres
 			case 40: //program 2 Lasser 1
 				if (port == true) {
 					PRG_reg[2] |= (1 << 0);
+					PRG_reg[2] &= ~(1 << 6); //dit zorgt voor vage 'niet willen starten' probleem
+					Serial.println("start");
 				}
 				else {
 					//PRG_reg[2] &= ~(1 << 0);
 					PRG_reg[2] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
+					Serial.println("stop");
 				}
 				break;
 
 			case 41: //program 3 lasser 2
 				if (port == true) {
 					PRG_reg[3] |= (1 << 0);
+					PRG_reg[3] &= ~(1 << 6);
 				}
 				else {
 					PRG_reg[3] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
 				}
-				break;						
+				break;	
+			case 42:
+				if (port == true) {
+					PRG_reg[4] |= (1 << 0);
+
+				}
+				else {
+					PRG_reg[4] &= ~(1 << 0);
+				}
+
+				break;
 
 			
 			default:
@@ -1413,14 +1427,15 @@ void LED_setLed(byte output, byte led, byte value) {
 		//Serial.print(F(">>, "));
 	}
 }
-void LED_idFxLed(byte prg,byte out,byte led,boolean id,byte value) {
+void LED_idFxLed(byte prg,byte out,byte led,byte id,byte value) {
 	byte pix;
 	for (byte i = 32; i < 40; i++) {
 		if (led_vlap[i] == out) {
 			pix = i - 32;
-			if (id == true) { //increment
+			if (id == 1) { //increment (25sept wordt niet gebruikt alleeen decrement in las)
 				switch (led) {
 				case 0:
+					//if ((led_fx[pix].r + value) < led_fx[pix].r) 
 					led_fx[pix].r = led_fx[pix].r + value;
 					break;
 				case 1:
@@ -1568,7 +1583,7 @@ void PRG_dl() {
 					break;
 				}							
 
-				Serial.print(F("Weer: "));
+				//Serial.print(F("Weer: "));
 				Serial.println(weer);
 
 				fxb = random(2, led_al * 7 / 10);
@@ -1637,7 +1652,7 @@ void PRG_dl() {
 			//stops program
 			PRG_reg[0] |= (1 << 7);
 
-			Serial.println("stop");
+			//Serial.println("stop");
 			break;
 
 			//************WEER 1 ZONNIG
@@ -2092,10 +2107,10 @@ void PRG_lightning() { //Programnummer=1, lighting starts now
 void FX_mtstart(byte prg) {
 	byte type;
 	if (prg == 2 | prg == 3)type = 0;
-
+	//Serial.println(type);
 	switch (type) {
 	case 0:
-		Serial.println(prg);
+		//Serial.println(prg);
 		if (mt_hr < mt_zononder) {
 
 			if (bitRead(PRG_reg[prg], 0) == true){
@@ -2247,9 +2262,9 @@ void PRG_las(byte prg, byte out) {
 
 	*/
 
-	static byte  burn[2];
+	static byte burn[2];
 	byte pk;
-	static int start[2];
+	static byte start[2];
 
 	switch (prg) {
 	case 2:
@@ -2261,9 +2276,9 @@ void PRG_las(byte prg, byte out) {
 	}
 
 	start[pk] ++;
-	if (start[pk] > 800) {
-		start[pk] = random(0, 750);
-		Serial.println("****");
+	if (start[pk] > 250) { //800
+		start[pk] = random(0, 225); //750
+		//Serial.println("****");
 		if (bitRead(PRG_reg[prg], 6) == true) {
 			PRG_reg[prg] |= (1 << 7);
 		}
@@ -2272,26 +2287,28 @@ void PRG_las(byte prg, byte out) {
 			PRG_reg[prg] &= ~(1 << 5);
 		}
 	}
+
 	if (bitRead(PRG_reg[prg], 7) == false) { //burn on
 		burn[pk] ++;
 		LED_setLed(out, 0, random(0, 250));
-		LED_setLed(out, 1, random(0, 150));
-		if (burn[pk] > 10) {
-			PRG_reg[prg] ^= (1 << 4);
-			if (bitRead(PRG_reg[prg], 4) == true) {
-				burn[pk] = random(2, 8);
+		LED_setLed(out, 1, random(0, 250));
+		if (burn[pk] > 2 ){
+			PRG_reg[prg] ^= (1 << 2);
+
+			if (bitRead(PRG_reg[prg], 2) == true) {
+				burn[pk] = random(0, 3); //2 8
 				LED_setLed(out, 2, 255);
 			}
 			else {
 				LED_setPix(out, 0, 0, 0);
-				burn[pk] = random(5, 9);
+				burn[pk] =  random(0, 3);
 			}
 			GPIOR0 |= (1 << 7);
 		}
 	}
 	else { //burn off
 		burn[pk] ++;
-		if (burn[pk] > 10) {
+		if (burn[pk] > 3) { //5
 			burn[pk] = 0;
 			if (bitRead(PRG_reg[prg], 5) == false) { //start cooling down
 				LED_setPix(out, 50, 50, 50);
@@ -2300,7 +2317,7 @@ void PRG_las(byte prg, byte out) {
 			}
 			else {
 				if (bitRead(PRG_reg[prg], 3) == false) {
-					LED_idFxLed(prg, out, 2, 0, random(5, 10));
+					LED_idFxLed(prg, out, 2, 0, 5);
 					LED_idFxLed(prg, out, 1, 0, 2);
 					LED_idFxLed(prg, out, 0, 0, 1);
 
@@ -2315,7 +2332,33 @@ void PRG_las(byte prg, byte out) {
 		}
 	}
 }
+void PRG_fire() {
+	//id PRG_reg bit 0 = true calls every 15ms from loop()
+	//prg =4
+	//PROG, output = 34
+	/*
+	PRG_reg
+	bit0 active
+	bit1 modeltime start
+	bit2
+	bit3
+	bit4
+	bit5
+	bit6
+	bit7 direction red
+	*/
+	static byte clr[3]; //0=rood, 1=groem, 2=blauw
+	if (bitRead(PRG_reg[4], 7) == false) {
+		clr[0]++;
+		if (clr[0] > 250) PRG_reg[4] |= (1 << 7);
+	}
+	else {
+		clr[0]--;
+		if (clr[0] < 5) PRG_reg[4] &= ~(1 << 7);
+	}
 
+	LED_setPix(34, clr[0], clr[1], clr[2]);
+}
 void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=building pixel
 	//max40xoutput 0-39
 	PRG_reg[pg] = PRG_reg[pg] >> 2; 
@@ -2973,34 +3016,34 @@ void ClkStop() {
 	}
 }
 void loop() {
+	static byte st; //timer count slow timer
+	static byte ft; //fast timer
+	DEK_DCCh();
+	COM_ProgramAssign();
+	//5ms timer
 
-	/*
-	
-	static byte dl;
-//	if (dl != bitRead(COM_reg, 2)) {
-	if (dl!=dagnacht){
-		dl = dagnacht; // bitRead(COM_reg, 2);
-		Serial.print("dagnacht is changed...");
-		Serial.println(dagnacht);
+	if (millis() - FastClk >5) { //5ms
+		FastClk = millis();
+		DSP_bit();
+		ft++;
+		if (ft > 3) {	//15ms			
+			st++;
+			ft = 0;
+			COM_Clk();
+			COM_sw();	
+			
+			//fx programs start
+			if (bitRead(PRG_reg[4], 0) == true) PRG_fire();
+			if (bitRead(PRG_reg[2],0)==true) PRG_las(2,32); //Lasser 1 
+			if (bitRead(PRG_reg[3],0)==true) PRG_las(3,33); //Lasser 2 	
+														
+			if (st > 5 | bitRead(GPIOR0, 7) == true) { //150ms
+				st = 0;
+				GPIOR0 &= ~(1 << 7);
+				//flClk = millis();
+				FastLED.show();
+				
+			}
+		}
 	}
-*/
-
-DEK_DCCh();
-COM_ProgramAssign();
-
-if (millis() - FastClk > 5) {
-	FastClk = millis();
-	COM_Clk();
-	COM_sw();
-	DSP_bit();
-	//fx programs start
-	if (bitRead(PRG_reg[2],0)==true) PRG_las(2,32); //Lasser 1 
-	if (bitRead(PRG_reg[3],0)==true) PRG_las(3,33); //Lasser 2 
-
-	if (millis() - flClk > 100 | bitRead(GPIOR0, 7) == true ) { //time value ? 100
-		GPIOR0 &= ~(1 << 7);
-		flClk = millis();
-		FastLED.show();
-	}
-}
 }

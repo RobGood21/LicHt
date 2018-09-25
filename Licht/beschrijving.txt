@@ -57,12 +57,12 @@ COM_set =register for general settings, stores and reads from EEPROM #400
 	//bit6 =free
 	//bit7 =free
 
-Programnummers
+Programnummers (prg)
 0=dl daglicht prg_dl
 1=lightning prg_lightning 
-2=
-3=
-4=
+2=lasser 1 PROG (output)32
+3=lasser 2 PROG 33
+4=fire PROG 34
 5=
 10 tm 19 verlichting start vanaf sunset **onder bewerking
 
@@ -73,7 +73,7 @@ Twee bytes shft[2]  0=segments 1=digits
 general register GPIOR0 
 bit 0= shift byte (segment, digit) select false = 0(segments)  true= 1(digits)
 bit 1= enable (1) disable (0) shift function start in loop or timer....
-bit 2= 
+bit 2= Flag DCC receive in progress (true) ***UITGESCHAKELD DUSS FREE
 bit 3=
 bit 4=efx enabled(0) disabled(1) *******UITGESCHAKELD ????????
 bit 5=Enable normal operation, waiting for DCC program main adres
