@@ -626,6 +626,12 @@ void COM_ps(byte pn) { //ps=program switch, mts model time start
 		case 4:
 			//PRG_fire();
 			break;
+		case 5:
+			//PRG_fireglow();
+			break;
+		case 6:
+			PRG_tv();
+			break;
 
 			/*
 								case 6:
@@ -822,10 +828,11 @@ void SW_normal(byte sw) {
 		dld_com(0);
 		break;
 	case 2:
-		PRG_reg[4] |= (1 << 0);
+		PRG_reg[6] |= (1 << 0);
 		break;
 	case 3:
-		PRG_reg[4] &= ~(1 << 0); 
+		PRG_reg[6] &= ~(1 << 0); 
+		LED_setPix(36, 0, 0, 0);
 		break;
 
 	}
@@ -1218,7 +1225,7 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 	boolean infx = false;
 
 
-	if (adres >= VL_adresmin & adres < VL_adresmin + 43) { //32 in vl line, 8 in fx line, 2 in programs on/off
+	if (adres >= VL_adresmin & adres < VL_adresmin + 48) { //32 in vl line, 8 in fx line, 2 in programs on/off
 		//byte pixel;
 		pixel = adres - VL_adresmin;
 		if (pixel > 31) infx = true;
@@ -1247,16 +1254,39 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 					PRG_reg[3] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
 				}
 				break;	
-			case 42:
+			case 42: //fire1
 				if (port == true) {
 					PRG_reg[4] |= (1 << 0);
 
 				}
 				else {
 					PRG_reg[4] &= ~(1 << 0);
+					LED_setPix(34, 0, 0, 0);
 				}
 
 				break;
+			case 43://Fire glow
+				if (port == true) {
+					PRG_reg[5] |= (1 << 0);
+
+				}
+				else {
+					PRG_reg[5] &= ~(1 << 0);
+					LED_setPix (35, 0, 0, 0);
+				}							   
+				break; 
+			case 44: //TV
+				if (port == true) {
+					PRG_reg[6] |= (1 << 0);
+
+				}
+				else {
+					PRG_reg[6] &= ~(1 << 0);
+					LED_setPix(36, 0, 0, 0);
+				}			
+				break;
+
+
 
 			
 			default:
@@ -2332,10 +2362,36 @@ void PRG_las(byte prg, byte out) {
 		}
 	}
 }
+void PRG_fireglow() {
+
+	PINB | (1 << 5);
+	//prg 5  prog(out 35	
+	static byte red=0;
+	static byte max;
+	byte green;
+
+	if (bitRead(PRG_reg[5],7) == true) {
+		red--;
+		if (red < max) {
+			PRG_reg[5] &= ~(1 << 7);
+			max = random(100, 254);
+		}
+		}
+	else {
+		red=red+2;
+		if (red > max) {
+			PRG_reg[5] |= (1 << 7);
+			max = random(20, 100);
+		}
+	}
+	if (red > 100) green = red - 100;
+	LED_setPix(35, red, green, 0);
+}
 void PRG_fire() {
 	//id PRG_reg bit 0 = true calls every 15ms from loop()
 	//prg =4
 	//PROG, output = 34
+	
 	/*
 	PRG_reg
 	bit0 active
@@ -2344,20 +2400,72 @@ void PRG_fire() {
 	bit3
 	bit4
 	bit5
-	bit6
-	bit7 direction red
+	bit6 
+	bit7 direction false = up
 	*/
-	static byte clr[3]; //0=rood, 1=groem, 2=blauw
-	if (bitRead(PRG_reg[4], 7) == false) {
-		clr[0]++;
-		if (clr[0] > 250) PRG_reg[4] |= (1 << 7);
+
+	static byte clr;  //
+	//clr++;
+	///*
+	
+	static byte maxmin=170;
+	static byte speed=3;
+	if(bitRead(PRG_reg[4],7)==true) {//cooling down
+		clr = clr - speed;
+		if (clr < maxmin) {
+			maxmin = random(30,255);
+			speed = random(2, 6);
+			PRG_reg[4] &= ~(1 << 7);
+		}
+	}
+	else { //heating up
+			clr = clr + speed;
+			if (clr > maxmin) {
+				maxmin = random(10,150 );
+				speed = random(1, 8);
+				PRG_reg[4] |= (1 << 7);
+			}
+		}
+
+//*/
+	FIRE_clr(34, clr);
+}
+void FIRE_clr(byte out, byte clr) {
+	byte px;
+	if (clr < 50) {
+		LED_setPix(out, clr, 0, 0);
 	}
 	else {
-		clr[0]--;
-		if (clr[0] < 5) PRG_reg[4] &= ~(1 << 7);
+		if (clr < 100) { //red increment, green increment to yellow
+			LED_setPix(out, clr, (clr - 50) * 1.5, 0);
+		}
+		else {
+			if (clr < 240) {				
+				LED_setPix (out, clr, clr-50, 0); //yellow increment
+			}
+			else {
+				LED_setPix(out, 255, 255, 255); //full
+			}
+		}
 	}
-
-	LED_setPix(34, clr[0], clr[1], clr[2]);
+}
+void PRG_tv() {
+	/*
+	prg 6
+	PROG36
+	*/
+	static byte count;
+	
+	static byte led;
+	led++;
+	count++;
+	if (led > 2)led = 0;
+	if (count ==0) {
+		count = random(5, 180);
+		LED_setLed(36, led, random(0, 200));
+		
+		//LED_setPix(36, random(0, 200), random(0, 150), random(0, 100));
+	}
 }
 void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=building pixel
 	//max40xoutput 0-39
@@ -3033,16 +3141,19 @@ void loop() {
 			COM_sw();	
 			
 			//fx programs start
-			if (bitRead(PRG_reg[4], 0) == true) PRG_fire();
+			
+			
 			if (bitRead(PRG_reg[2],0)==true) PRG_las(2,32); //Lasser 1 
 			if (bitRead(PRG_reg[3],0)==true) PRG_las(3,33); //Lasser 2 	
-														
+			if (bitRead(PRG_reg[4], 0) == true) PRG_fire();
+			if (bitRead(PRG_reg[5], 0) == true) PRG_fireglow();
+			
+
 			if (st > 5 | bitRead(GPIOR0, 7) == true) { //150ms
 				st = 0;
 				GPIOR0 &= ~(1 << 7);
 				//flClk = millis();
-				FastLED.show();
-				
+				FastLED.show();				
 			}
 		}
 	}
