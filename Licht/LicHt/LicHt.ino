@@ -70,6 +70,7 @@ byte prgedit;
 
 byte PRG_min[32]; //Time next active minute
 byte PRG_hr[32]; //Time next actice hour
+byte blink[2]; //tbv blinking leds in Traffic
 
 unsigned long Clk;
 unsigned long FastClk;
@@ -568,7 +569,10 @@ void COM_ProgramAssign() {
 	if (bitRead(COM_reg, 0) == true) { //find active program
 		if (bitRead(PRG_reg[pa], 0) == true) COM_ps(pa);
 		pa ++;
-		if (pa > 39) {
+		if (pa > 9) {
+			/*
+			alleen programmaas die via com_programassign en/of com_ps worden gestart hoeven te worden gescanned
+			*/
 			pa = 0;
 			COM_reg &= ~(1 << 0); //reset bit 0, next cycle not active
 		}
@@ -612,9 +616,7 @@ void COM_ProgramAssign() {
 			case 6:
 				FX_mtstart(6);
 				break;
-			case 27: //traffic1
-				PRG_traffic1();
-				break;
+
 			default:			
 			//Serial.print(F(": "));
 			//Serial.print(pna);
@@ -625,7 +627,13 @@ void COM_ProgramAssign() {
 		}
 		COM_reg |= (1 << 0); //next cycle active
 		pna ++;
-if (pna > 39)pna = 0;
+if (pna > 29)pna = 0;
+/*
+Hier alleen programmaas die met modeltijd kunnen worden gestart scannen, vanaf program 28 niet meer
+
+*/
+
+
 	}
 }
 void COM_ps(byte pn) { //ps=program switch
@@ -649,6 +657,47 @@ void COM_ps(byte pn) { //ps=program switch
 			PRG_lightning();
 			break;
 			//start effects 2-5 behind 15ms timer in loop()
+		case 9: //nachtomschakeling verkeerslichten
+
+			//Serial.println("jo");
+
+			/*
+			bit0=enable not used
+			bit1=model time start
+			bit2=enable nachtstand
+			bit3=enable blink traffic lights
+			*/
+			if (bitRead(PRG_reg[9], 2) == true) {
+
+				PRG_reg[9] &= ~(1 << 2);
+				PRG_hr[9] = mt_zonop - 2;
+				PRG_reg[9] |= (1 << 3); //enable night blink
+				PRG_reg[27] &= ~(1 << 1);//disable modeltime start traffic 1
+				PRG_reg[28] &= ~(1 << 1); //idem traffic 2
+				PRG_reg[29] &= ~(1 << 1);//idm traffic 3
+				for (byte i = 17; i < 27; i++) {
+					LED_setPix(i, 0, 0, 0); //black all traffic lights
+				}
+
+				//Serial.println(PRG_hr[9]);
+				//Serial.println(PRG_min[9]);
+
+
+			}
+			else {
+				PRG_reg[9] |= (1 << 2);
+				PRG_hr[9] = 1;
+				PRG_reg[9] &= ~(1 << 3); //disable blink nachtstand 
+				PRG_reg[27] = B00000010; //enable modeltime start traffic 1
+				PRG_reg[28] = B00000010;
+				PRG_reg[29] = B00000010;
+
+				interval(27, 1,0);
+				interval(28, 2, 0);
+				interval(29, 3, 0);
+			}
+
+			break;
 		case 10:
 			PRG_huis(pn, 0, 1);
 			break;
@@ -701,7 +750,15 @@ void COM_ps(byte pn) { //ps=program switch
 		case 26:
 			PRG_huis(pn, 16, 12);
 			break;
-
+		case 27: //traffic1
+			PRG_traffic1();
+			break;
+		case 28:
+			PRG_traffic2();
+			break;
+		case 29:
+			PRG_traffic3();
+			break;
 		}
 	}
 }
@@ -768,9 +825,7 @@ void COM_sw() {
 void COM_rt() { //reset timers
 //resets all building vl pixel parameters, after power-up and manual switching between day and night.
 //Serial.println(F("COM_rt()"));
-
-
-	//stond in prg_dl
+	
 	if (bitRead(COM_reg, 2) == false) {
 		mt_hr = mt_zonop; //set modeltijd 
 		mt_min = 0;
@@ -780,10 +835,8 @@ void COM_rt() { //reset timers
 		mt_min = 0;
 	}
 
-
-
-	Serial.println(mt_hr);
-	Serial.println(mt_min);
+	//Serial.println(mt_hr);
+	//Serial.println(mt_min);
 
 
 	//alle pixels in VL uitzetten
@@ -803,6 +856,20 @@ void COM_rt() { //reset timers
 	PRG_reg[27] = B00000010; //enable modeltime start and initialise register
 	PRG_hr[27] = mt_hr;
 	PRG_min[27] = mt_min+2;	
+	//start traffic 2 (enkelvoudig kruispunt)
+	PRG_reg[28] = B00000010;
+	PRG_hr[28] = mt_hr;
+	PRG_min[28] = 01;
+	//start traffic 3 (voetganger oversteek)
+	PRG_reg[29] = B00000010;
+	PRG_hr[29] = mt_hr;
+	PRG_min[29] = 00;
+
+	//Start program voor verkeerslichten nachtregeling
+	PRG_reg[9] = B00000110; //enable modeltime start nachtschakeling verkeerslichten
+	PRG_hr[9] = 1; //uitschakelen verkeersregeling om 1 uur in de nacht
+	PRG_min[9] = 0;
+	   
 
 	for (byte i = 2; i < 10; i++) {
 		switch (i) { 
@@ -1344,12 +1411,12 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 				if (port == true) {
 					PRG_reg[2] |= (1 << 0);
 					PRG_reg[2] &= ~(1 << 6); //dit zorgt voor vage 'niet willen starten' probleem
-					Serial.println("start");
+					//Serial.println("start");
 				}
 				else {
 					//PRG_reg[2] &= ~(1 << 0);
 					PRG_reg[2] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
-					Serial.println("stop");
+					//Serial.println("stop");
 				}
 				break;
 
@@ -2344,7 +2411,7 @@ void PRG_blink() {
 	flashing blinking lights
 	groen licht voetgangers hoofdweg traffic 1  
 
-	PRG_reg[28]	
+	blink[0]	
 	bit0=enable out 19 green
 	bit1=enable out 22 green
 	bit2=enable out 19 yellow
@@ -2353,59 +2420,128 @@ void PRG_blink() {
 	bit5=count out 22
 	bit6=count out 19 yellow
 	bit7=count out 22 yellow 
-	PRG_reg[29]
+
+	blink[1]
 	bit0 status out 19 green
 	bit1 status out 22 green
 	bit2 status out 19 yellow
 	bit3 status out 22 yellow
-	bit4
-	bit5
-	bit6
-	bit7
+	bit4 count out 25 green
+	bit5 status out 25 green
+	bit6 count out 26 yellow
+	bit7 status out 26 yellow
 	
 	
 	*/
+
 	byte pix;
 	byte led;
-	for (byte i = 0; i < 4; i++) {
 
-		if (bitRead(PRG_reg[28], i) == true) {
+	if (bitRead(PRG_reg[9], 3) == true) { //nachtstand verkeersregeling enabled
 
+		pix = PRG_reg[9] >> 5; //timer snelheid knipperen gele lampen
 
-			if (bitRead(PRG_reg[28], i+4) == true) {
-				PRG_reg[28] &= ~(1 << i+4);
-				
-				switch (i) {
-				case 0:					
-					pix = 19;
-					led = 2;
-					break;
-				case 1:
-					pix = 22;
-					led = 2;
-					break;
-				case 2:
-					pix = 19;
+		if (pix == 5) {
+			pix = 0;
+				PRG_reg[9] ^= (1 << 4);
+
+				if (bitRead(PRG_reg[9], 4) == true) {
+					//Gele stoplichten aan
+					led = 250;
+				}
+				else {
+					//gele stoplichten uit
 					led = 0;
+				}
+
+				LED_setLed(17, 0, led);
+				LED_setLed(18, 0, led);
+				LED_setLed(20, 0, led);
+				LED_setLed(21, 0, led);
+				LED_setLed(23, 0, led);
+				LED_setLed(24, 0, led);
+				LED_setLed(25, 0, led);
+				//LED_setLed(26, 0, led);
+			}
+			else {
+				pix++;
+			}
+			//rebuild register
+			pix = pix << 5;
+			PRG_reg[9] = PRG_reg[9] << 3;
+			PRG_reg[9] = PRG_reg[9] >> 3;
+			PRG_reg[9] = PRG_reg[9] + pix;
+	}
+	else {
+		for (byte i = 2; i < 4; i++) {
+			//blinking  of program 29, output 26
+			if (bitRead(PRG_reg[29], i) == true) { //blink active
+				switch (i) {
+				case 2:
+					led = 2;
 					break;
 				case 3:
-					pix = 22;
 					led = 0;
 					break;
 				}
 
-				
-				//toggle green led of pix(el) 
-				PRG_reg[29] ^= (1 << i);
-				if (bitRead(PRG_reg[29], i) == true) {
-						LED_setLed(pix, led, 250);
+				if (bitRead(blink[1], i+2) == true) {
+					blink[1] &= ~(1 << i+2);
+
+					if (bitRead(blink[1], i+3) == true) { //status led, bit2 of PRG-reg[28] is not used by PRG_reg[28]
+						LED_setLed(26, led, 250);
+						blink[1] &= ~(1 << i+3);
 					}
 					else {
-						LED_setLed(pix, led, 0);
+						LED_setLed(26, led, 0);
+						blink[1] |= (1 << i+3);
 					}
+				}
+				else {
+					blink[1] |= (1 << i+2);
+				}
 			}
-			else {
-				PRG_reg[28] |= (1 << i+4);
+		}
+	
+
+
+		for (byte i = 0; i < 4; i++) {
+			if (bitRead(blink[0], i) == true) {
+				if (bitRead(blink[0], i+4) == true) {
+					blink[0] &= ~(1 << i+4);
+
+					switch (i) {
+					case 0:					
+						pix = 19;
+						led = 2;
+						break;
+					case 1:
+						pix = 22;
+						led = 2;
+						break;
+					case 2:
+						pix = 19;
+						led = 0;
+						break;
+					case 3:
+						pix = 22;
+						led = 0;
+						break;
+					}
+
+				
+					//toggle green led of pix(el) 
+					blink[1] ^= (1 << i+2);
+					if (bitRead(blink[1], i+2) == true) {
+							LED_setLed(pix, led, 250);
+						}
+						else {
+							LED_setLed(pix, led, 0);
+						}
+				}
+				else {
+					blink[0] |= (1 << i+4);
+				}
 			}
 		}
 	}
@@ -2441,7 +2577,7 @@ void PRG_traffic1() {
 		break;
 	case 4:
 		LED_setPix(19, 0, 0, 250); //groen voor voetgangers HW
-		PRG_reg[28] |= (1 << 2); //enable blink yellow light warning rechtsaf slaand verkeer
+		blink[0] |= (1 << 2); //enable blink yellow light warning rechtsaf slaand verkeer
 		interval(27,2, 0);
 		fase = 5;
 		break;
@@ -2451,7 +2587,7 @@ void PRG_traffic1() {
 		fase = 6;
 		break;
 	case 6: 
-		PRG_reg[28] |= (1 << 0); //enable blink for green voetganger NZ
+		blink[0] |= (1 << 0); //enable blink for green voetganger NZ
 		interval(27, 4, 0);
 		fase = 7;
 		break;
@@ -2461,8 +2597,8 @@ void PRG_traffic1() {
 		fase = 8;
 		break;
 	case 8:
-		PRG_reg[28] &= ~(1 << 0); //disable blink voetganger NZ
-		PRG_reg[28] &=~ (1 << 2); //disable blink yellow light warning rechtsaf slaand verkeer
+		blink[0] &= ~(1 << 0); //disable blink voetganger NZ
+		blink[0] &=~ (1 << 2); //disable blink yellow light warning rechtsaf slaand verkeer
 		interval(27, 6, 0);
 		LED_setPix(19, 0, 250, 00); //rood voetganger NZ
 
@@ -2490,7 +2626,7 @@ void PRG_traffic1() {
 		break;
 	case 13:
 		LED_setPix(22, 0, 0, 250); //groen voetganger west
-		PRG_reg[28] |= (1 << 3); //enable blink yellow warning
+		blink[0] |= (1 << 3); //enable blink yellow warning
 		interval(27, 2, 0);
 		fase = 14;
 		break;
@@ -2500,7 +2636,7 @@ void PRG_traffic1() {
 		fase = 15;
 		break;
 	case 15:
-		PRG_reg[28] |= (1 << 1); //enable blink for green voetganger OW
+		blink[0] |= (1 << 1); //enable blink for green voetganger OW
 		interval(27, 1, 0);
 		fase = 16;
 		break;
@@ -2510,8 +2646,8 @@ void PRG_traffic1() {
 		fase = 17;
 		break;
 	case 17:
-		PRG_reg[28] &= ~(1 << 1); //disable blink voetganger OW
-		PRG_reg[28] &= ~(1 << 3); //disable blink yellow warning
+		blink[0] &= ~(1 << 1); //disable blink voetganger OW
+		blink[0] &= ~(1 << 3); //disable blink yellow warning
 		interval(27, 2, 0);
 		LED_setPix(22, 0, 250, 00); //rood voetganger OW
 		fase = 18;
@@ -2527,6 +2663,94 @@ void PRG_traffic1() {
 	PRG_reg[27] = PRG_reg[27] << 6;
 	PRG_reg[27] = PRG_reg[27] >> 6;
 	PRG_reg[27] = PRG_reg[27] + fase;
+}
+void PRG_traffic2() {
+	//note bit 0 = gele led, bit 1=rode led, bit2 =groene led
+	//prg28 outputs: 23-24 bit2,bit3 not used
+	byte fase = PRG_reg[28] >> 4;
+	switch (fase) { //max 15 steps
+	case 0:
+
+		LED_setPix(23, 0, 250, 0);
+		LED_setPix(24, 0, 250, 0);
+		interval(28, 6, 0);
+		fase=1;
+		break;
+	case 1:
+		LED_setPix(23, 0, 0, 250);
+		interval(28, random(10, 15), 0);
+		fase = 2;
+		break;
+	case 2:
+		LED_setPix(23, 250, 0, 0);
+		interval(28, 6, 0);
+		fase = 3;
+		break;
+	case 3:
+		LED_setPix(23, 0, 250, 0);
+		interval(28, 6, 0);
+		fase = 4;
+		break;	
+	case 4:
+		LED_setPix(24, 0, 0, 250);
+		interval(28, random(10, 15), 0);
+		fase = 5;
+		break;
+	case 5:
+		LED_setPix(24, 250, 0, 0);
+		interval(28, 6, 0);
+		fase = 0;
+		break;
+	}
+	fase = fase << 4;
+	PRG_reg[28] = PRG_reg[28] << 4;
+	PRG_reg[28] = PRG_reg[28] >> 4;
+	PRG_reg[28] = PRG_reg[28] + fase;
+}
+void PRG_traffic3() { //voetgangers oversteek
+	//note bit 0 = gele led, bit 1=rode led, bit2 =groene led
+	//prg29 outputs: 25-26 
+	byte fase = PRG_reg[29] >> 4;
+	switch (fase) { //max 15 steps
+	case 0:
+		PRG_reg[29] &= ~(1 << 2);
+		PRG_reg[29] &= ~(1 << 3);
+		LED_setPix(25, 0, 250, 0);
+		LED_setPix(26, 0, 250, 0);
+		interval(29, 6, 0);
+		fase = 1;
+		break;
+	case 1:
+		LED_setPix(25, 0, 0, 250);
+		interval(29, random(20, 30), 0);
+		fase = 2;
+		break;
+	case 2:
+		LED_setPix(25, 250, 0, 0);
+		interval(29, 6, 0);
+		fase = 3;
+		break;
+	case 3:
+		LED_setPix(25, 0, 250, 0);
+		interval(29, 6, 0);
+		fase = 4;
+		break;
+	case 4:
+		LED_setPix(26, 0, 0, 250); //voetgangers groen
+		PRG_reg[29] |= (1 << 3); //start flash geel alarm
+		interval(29, random(10, 15), 0);
+		fase = 5;
+		break;
+	case 5: //hier voetgangers groen knipperen
+		PRG_reg[29] |= (1 << 2); //start blinking green led
+		interval(29, 7, 0);
+		fase = 0;
+		break;
+	}
+	fase = fase << 4;
+	PRG_reg[29] = PRG_reg[29] << 4;
+	PRG_reg[29] = PRG_reg[29] >> 4;
+	PRG_reg[29] = PRG_reg[29] + fase;
 }
 void TRF_rood(byte tp) {
 
