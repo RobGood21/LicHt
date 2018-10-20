@@ -627,9 +627,9 @@ void COM_ProgramAssign() {
 		}
 		COM_reg |= (1 << 0); //next cycle active
 		pna ++;
-if (pna > 29)pna = 0;
+if (pna > 30)pna = 0;
 /*
-Hier alleen programmaas die met modeltijd kunnen worden gestart scannen, vanaf program 28 niet meer
+Hier alleen programmaas die met modeltijd kunnen worden gestart scannen.
 
 */
 
@@ -759,6 +759,10 @@ void COM_ps(byte pn) { //ps=program switch
 		case 29:
 			PRG_traffic3();
 			break;
+		case 30: //straatverlichting 
+			PRG_straat();
+			break;
+
 		}
 	}
 }
@@ -837,6 +841,7 @@ void COM_rt() { //reset timers
 
 	//Serial.println(mt_hr);
 	//Serial.println(mt_min);
+
 
 
 	//alle pixels in VL uitzetten
@@ -919,6 +924,23 @@ void COM_rt() { //reset timers
 	LED_setLed(15, 1, 200);
 	LED_setLed(15, 0, 200);
 	LED_setLed(16, 1, 200);
+
+	//PRG_reg[30] straat en openbare verlichting start instellen
+	if (bitRead(COM_reg, 2) == true) { //nacht
+		//start in fase 2
+		PRG_reg[30] = B00100010;
+		PRG_hr[30] = mt_zononder;
+		PRG_min[30] = 10;
+	}
+	else { //dag
+		//start in fase 0
+		PRG_reg[30] = B00000010;
+		PRG_hr[30] = mt_zononder - 1;
+		PRG_min[30] = 45;
+	}
+	
+
+
 }
 
 void SW_programs() {
@@ -2427,8 +2449,8 @@ void PRG_blink() {
 	bit2 status out 19 yellow
 	bit3 status out 22 yellow
 	bit4 count out 25 green
-	bit5 status out 25 green
-	bit6 count out 26 yellow
+	bit5 cout out 26 yellow
+	bit6 status out 25 green
 	bit7 status out 26 yellow
 	
 	
@@ -2488,13 +2510,13 @@ void PRG_blink() {
 				if (bitRead(blink[1], i+2) == true) {
 					blink[1] &= ~(1 << i+2);
 
-					if (bitRead(blink[1], i+3) == true) { //status led, bit2 of PRG-reg[28] is not used by PRG_reg[28]
+					if (bitRead(blink[1], i+4) == true) { //status led, bit2 of PRG-reg[28] is not used by PRG_reg[28]
 						LED_setLed(26, led, 250);
-						blink[1] &= ~(1 << i+3);
+						blink[1] &= ~(1 << i+4);
 					}
 					else {
 						LED_setLed(26, led, 0);
-						blink[1] |= (1 << i+3);
+						blink[1] |= (1 << i+4);
 					}
 				}
 				else {
@@ -2953,6 +2975,7 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 	byte dl=10; //licht wat overdag en in avond brand (overdag)
 	byte da=10; //licht wat alleen overdag brand (Etalage)
 
+
 	switch (huis) { //huis programmaas
 	case 1: //h1-h2-h4
 		hk = 1;
@@ -3161,13 +3184,13 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 		PRG_min[pg]= random(20, 60);	
 
 
-		//***		
-		Serial.print(F("stp prgr:  "));
-		Serial.print(pg);
-		Serial.print(",  ");
-		Serial.print(F("#:  "));
-		Serial.println(PRG_reg[pg]);
-		//***
+				
+		//Serial.print(F("stp prgr:  "));
+		//Serial.print(pg);
+		//Serial.print(",  ");
+		//Serial.print(F("#:  "));
+		//Serial.println(PRG_reg[pg]);
+		
 		PRG_reg[pg] = 0;
 		break;
 		
@@ -3177,7 +3200,88 @@ void PRG_huis(byte pg, byte out,byte huis) { //pg=program out=output huis=buildi
 	PRG_reg[pg] |= (1 << 1);
 	
 }
+void PRG_straat() {
+	/*
+	Straat- en openbare verlichting
+	Programma 30 outputs 27 en 28
+	vaste start en stop tijden 6 verschillende
+		*/
+	byte fase = PRG_reg[30] >> 4;
+	switch (fase) { //15steps
+	case 0: //init start 3/4 voor zonsondergang 20:40
+		//alles nog uit hier
+		LED_setLed(27, 1, 250);
+		PRG_min[30] = 50;
+		fase = 1;
+		break;
+	case 1: //20:50
+		LED_setLed(27, 0, 250);
+		PRG_hr[30] = mt_zononder;
+		PRG_min[30] = 10;
+		fase = 2;
+		break;
+	case 2: //2e start 21:10
+		LED_setPix(27, 250, 250, 250);
+		PRG_min[30] = 14;
+		fase = 3;
+		break;
+	case 3: //21:14
+		LED_setLed(28, 1, 250);
+		PRG_min[30] = 50;
+		fase = 4;
+		break;
+	case 4: //21:50
+		LED_setLed(28, 0, 250);
+		interval(30, 15, 0);
+		fase = 5;
+		break;
+	case 5: //22:05
+		LED_setLed(28, 2, 250);
+		//alles brand, nu eerste stop
+		PRG_hr[30] = 1;
+		PRG_min[30] = 30;
+		fase = 6;
+		break;
+	case 6://1:30
+		LED_setLed(28, 0, 0);
+		PRG_hr[30] = 2;
+		PRG_min[30] = 10;
+		fase = 7;
+		break;
+	case 7: //2:10
+		LED_setLed(27, 0, 0);
+		PRG_hr[30] = mt_zonop + 1;
+		fase = 8;
+		break;
+	case 8: //8:10
+		LED_setLed(27, 1, 0);
+		PRG_min[30] = 30;
+		fase = 9;
+		break;
+	case 9: //8:30
+		LED_setLed(28, 1, 0);
+		interval(30, 35, 0);
+		fase = 10;
+		break;
+	case 10: //9:05
+		LED_setPix(27, 0, 0, 0);
+		interval(30, 30, 0);
+		fase = 11;
+		break;
+	case 11: //9:35
+		LED_setPix(28, 0, 0, 0);
+		PRG_hr[30] = mt_zonop - 1;
+		PRG_min[30] = 30;
+		fase = 0;
+		break;
+	}
 
+	//rebuild register
+	fase = fase << 4;
+	PRG_reg[30] = PRG_reg[30] << 4;
+	PRG_reg[30] = PRG_reg[30] >> 4;
+	PRG_reg[30] = PRG_reg[30] + fase;
+}
 
 void DSP_clock() {
 	byte singles;
@@ -3599,11 +3703,14 @@ void loop() {
 			if (bitRead(PRG_reg[6], 0) == true) PRG_tv();
 			
 
-			if (st > 5 | bitRead(GPIOR0, 7) == true) { //150ms
-				st = 0;
-				GPIOR0 &= ~(1 << 7);	
+			if (st > 5 ) { //150ms
+				st = 0;				
 				PRG_blink();
-				FastLED.show();				
+				GPIOR0 |= (1 << 7);
+			}
+			if (bitRead(GPIOR0, 7) == true) {
+				GPIOR0 &= ~(1 << 7);
+				FastLED.show();	
 			}
 		}
 	}
