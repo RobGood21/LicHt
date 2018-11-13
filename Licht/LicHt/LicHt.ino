@@ -157,15 +157,16 @@ void setup() {
 void MEM_default() {
 	//read default values
 	COM_DCCAdres = 64; //basic DCC adress
-	led_al = 240; //qty of leds in daylight
+	//led_al = 240; //qty of leds in daylight
 	tday = 24; //duration of day in modeltime
 	CV_wt = 0; //weather type
 	mt_zonop = 7; //hour starts sunrise
 	mt_zononder = 20; //hour starts sunset
-	//SrS = 50; //#510 CV5, sun rise speed in micros/40 
+
 
 }
 void MEM_read() {
+	byte temp;
 	//byte apix = 240;
 	//merk op volgorde van variable instellen is belangrijk, eerst COM_DCCadres en COM_DCCadres instellingen
 
@@ -220,13 +221,22 @@ void MEM_read() {
 		}
 	}
 	
-	if (EEPROM.read(500) != 0xFF) led_al = EEPROM.read(500); //aantal pixels in Daglicht
+	temp = EEPROM.read(500);
+	if (temp == 30 | temp == 60 | temp == 90 | temp == 120 | temp == 150 | temp == 180 | temp == 210 | temp == 240) {
+		led_al = temp;
+	}
+	else {
+		//default value
+		EEPROM.write(500,240);
+		led_al = 240;
+	}
+	
 
-	FastLED.addLeds<NEOPIXEL, 8>(led_dl, led_al);//leds on pin 8 'Daglicht'
+	FastLED.addLeds<NEOPIXEL, 8>(led_dl, 240);//leds on pin 8 'Daglicht' declaration max possible pixels
 	FastLED.addLeds<NEOPIXEL, 7>(led_vl, 32);//create strip of 32leds on pin7 'verlichting'
 	FastLED.addLeds<NEOPIXEL, 9>(led_fx, 8);//create strip of 8 pixels for effects on PIN9
 
-	led_al--; 
+	//led_al--; 
 	//led_al = 239;
 
 	/*
@@ -245,7 +255,7 @@ void MEM_read() {
 	//snelheid fx zonsopgang in 10 stappen, recht evenredig aan aantal leds
 	if (EEPROM.read(510) == 0xFF) EEPROM.write(510, 5); //5=medium speed
 	Srspeed = EEPROM.read(510);
-	SrS =  Srspeed * 2 * led_al; //speed of sunrise
+	COM_SrS();
 	Serial.println(SrS);
 
 	//lgt_count = led_al * 5 / 100; //% van leds als lightning
@@ -310,6 +320,8 @@ void MEM_reset(int start,int aantal) {
 	for (int i = start; i < start + aantal; i++) {
 		if (EEPROM.read(i) < 0xFF)EEPROM.write(i, 0xFF);
 	}
+	delay(500);
+
 MEM_read();
 }
 void MEM_change() { //called when mem is changed, check all memories
@@ -319,9 +331,14 @@ void MEM_change() { //called when mem is changed, check all memories
 		//Serial.println("save");
 	}
 
-	if (EEPROM.read(510) != Srspeed) {
+	if (EEPROM.read(500) != led_al) { //qty pixels changed
+		EEPROM.write(500, led_al);
+		COM_SrS();	
+	}
+
+	if (EEPROM.read(510) != Srspeed) { //sunrise speed changed
 		EEPROM.write(510, Srspeed);
-		SrS = Srspeed * 2 * led_al; //speed of sunrise
+		COM_SrS();
 	}
 
 
@@ -951,6 +968,9 @@ void COM_rt() { //reset timers
 
 
 }
+void COM_SrS() {
+	SrS = Srspeed * 2 * (240/led_al*240); //speed of sunrise
+}
 
 void SW_programs() {
 	//loads program to be edited	
@@ -961,24 +981,34 @@ void SW_programs() {
 		GPIOR0 |= (1 << 5); //enter DCC receive mode, see APP_COM 
 		DSP_txt(0);
 		break;
-	case 1:
+	case 1: //speed of sunrise and sunset effect
 		DSP_txt(1);
-
+		LED_on(0);
 		break;
-	case 2: //lasser 1 enable modeltijd 		
+	case 2: //aantal pixels in daglicht
+		DSP_txt(6);
+		LED_on(0);
+		break;
+	case 3: //lasser 1 enable modeltijd 		
 		DSP_txt(2);
 		LED_on(bitRead(PRG_reg[2], 1));
 		break;
-	case 3: //lasser 2 enable modeltijd
+	case 4: //lasser 2 enable modeltijd
 		DSP_txt(3);
 		LED_on(bitRead(PRG_reg[3], 1));
 		break;
-	case 4: //fire and glow enable model time start
+	case 5: //fire and glow enable model time start
 		DSP_txt(4);
 		LED_on(bitRead(PRG_reg[4], 1));
 		break;
-	case 5: //tv enable modeltime start
+	case 6: //tv enable modeltime start
 		DSP_txt(5);
+		break;
+	case 7: //factory reset
+		DSP_txt(7);
+		LED_on(0);
+		SW_reg &= ~(1 << 0);
+		SW_reg &= ~(1 << 0);
 		break;
 		
 	default:
@@ -1069,32 +1099,41 @@ void SW_mainprg(byte sw) {
 		break;
 	case 2: //switch value -
 		switch (prgedit) {
-		case 1:
+		case 1: //speed sunset,sunrise
 			if (Srspeed >= 0) {
 				Srspeed--;
 				DSP_txt(1);
 			}
 			break;
-		case 2: //lasser 1 off
+		case 2: //qty pixels in dl
+			if (led_al > 30)led_al = led_al - 30;
+			DSP_txt(6);
+			break;
+
+		case 3: //lasser 1 off
 			PRG_reg[2] &= ~(1 << 1); //reset model time start
 			COM_set &= ~(1 << 1);
 			LED_on(0);
 			break;
-		case 3: //lasser 2 off
+		case 4: //lasser 2 off
 			PRG_reg[3] &= ~(1 << 1); //reset model time start
 			COM_set &= ~(1 << 2);
 			LED_on(0);
 			break;
-		case 4: //fire and glow
+		case 5: //fire and glow
 			PRG_reg[4] &= ~(1 << 1); //reset modeltime start fire
 			PRG_reg[5] &= ~(1 << 1); //reset modeltime start glow
 			COM_set &= ~(1 << 3); //reset bit in register
 			LED_on(0);
 			break;
-		case 5: //tv
+		case 6: //tv
 			PRG_reg[6] &= ~(1 << 1); //reset modeltime start tv
 			COM_set &= ~(1 << 4); //reset bit in register
 			LED_on(0);
+			break;
+		case 7: //factory reset 
+			//nu reset verlaten.
+			MEM_read();
 			break;
 		}
 		break;
@@ -1107,26 +1146,49 @@ void SW_mainprg(byte sw) {
 				DSP_txt(1);
 			}
 			break;
-		case 2: //lasser 1 on
+		case 2: //qty pixels in DL
+			if (led_al < 211)led_al = led_al + 30;
+			DSP_txt(6);
+			break;
+		case 3: //lasser 1 on
 			PRG_reg[2] |= (1 << 1); //set model time start
 			COM_set |=(1 << 1);
 			LED_on(1);
 			break;
-		case 3: //lasser 2 on
+		case 4: //lasser 2 on
 			PRG_reg[3] |= (1 << 1); //set model time start
 			COM_set |= (1 << 2);
 			LED_on(1);
 			break;
-		case 4: //fire on
+		case 5: //fire on
 			PRG_reg[4] |= (1 << 1); //set modeltime start fire
 			PRG_reg[5] |= (1 << 1); //set modeltime start glow
 			COM_set |= (1 << 3); //set bit in register
 			LED_on(1);
 			break;
-		case 5: //tv
+		case 6: //tv
 			PRG_reg[6] |= (1 << 1); //set modeltime start tv
 			COM_set |= (1 << 4); //set bit in register
 			LED_on(1);
+			break;
+		case 7: //factory reset
+			//twee willekeurige geheugen bits nodig. sw_reg 0 en 1
+			if (bitRead(SW_reg, 0) == false) {
+				SW_reg |= (1 << 0);
+				PORTB |= (1 << 4);
+			}
+			else {
+				if (bitRead(SW_reg, 1) == false) {
+					SW_reg |= (1 << 1);
+					PORTB |= (1 << 5);
+				}
+				else {
+					MEM_reset(0, EEPROM.length());
+					setup();
+				}
+			}
+
+
 			break;
 		}
 		break;
@@ -1213,6 +1275,7 @@ void APP_Monitor(boolean type, int adres, int decoder, int channel, boolean port
 void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, boolean onoff, int cv, int value) {
 	static byte check;
 	byte mr; //***7juni van static byte naar lokaal gezet. Check bij niet werken bliksem...
+	byte temp;
 		//=memorie read
 	//Functies decoder op Mainadres
 	//port 1=dagnacht met  zonsopgang en ondergang effecten, start automatisch dagnacht programma, dynamisch
@@ -1220,7 +1283,8 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 	//port 3 ?
 	//port 4 ?
 	//programming mainadres
-	boolean ok;
+	boolean ok=false;
+
 	if (bitRead(GPIOR0, 5) == true) { //waiting for DCCadress
 		COM_DCCAdres = decoder;
 		EEPROM.write(100, decoder);
@@ -1306,7 +1370,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 				switch (value) {
 					case 10: //reset EEprom totaal, systeem reset factory reset
 					MEM_reset(0,EEPROM.length());
-					MEM_read();
+					setup();
 					break;			
 				}
 				break;
@@ -1317,14 +1381,29 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 					if (EEPROM.read(510) != value) {
 						EEPROM.write(510, value);
 						Srspeed = value;
-						SrS = Srspeed * 2 * led_al; //speed of sunrise
+						COM_SrS();
 						ok = true;
 					}
 				}
 
 				break;
+			case 4: //qty of pixels in dl
+				//ok = false;
+				temp = value;
+				for (byte i = 0; i < 9; i++) {
+					temp = temp - 30;
+					if (temp == 0) {
+						if (EEPROM.read(500) != value) {
+							EEPROM.write(500, value);
+							led_al = value;
+							ok = true;
+						}						
+						i = 10;
+					}
+				}
+				break;
 
-			case 4: //duur modeltijd dag
+			case 5: //duur modeltijd dag
 				if (EEPROM.read(501) != value) {
 					EEPROM.write(501, value);
 					MEM_read();
@@ -1422,7 +1501,7 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 				break;
 			}
 			if (ok == true) {
-				DSP_cvtxt(value);
+				DSP_cvtxt(cv);
 				MEM_change();
 			}
 		}
@@ -3536,6 +3615,8 @@ pin 6 portd6= latch clock RCLK
 	}
 }
 void DSP_txt(byte txtnum) {
+	byte temp;
+	byte tens=0;
 	switch (txtnum) {
 	case 0: //dcc
 		klok[3] = DSP_digit(10);
@@ -3578,6 +3659,42 @@ void DSP_txt(byte txtnum) {
 		klok[2] = DSP_digit(23);
 		klok[1] = DSP_digit(16);
 		klok[0] = DSP_digit(10);
+		break;
+	case 6: //qty of pixels
+		klok[3] = DSP_digit(14);
+		temp = led_al;
+		//find hundreds
+		if (temp > 199) {
+			klok[2] = DSP_digit(2);
+			temp = temp - 200;
+		}
+		else {
+			if (temp > 99) {
+				klok[2] = DSP_digit(1);
+				temp = temp - 100;
+			}
+			else {
+				klok[2] = DSP_digit(0);
+			}
+		}
+		//find tens
+		//Serial.println(temp);
+		while (temp > 9) {
+			temp = temp - 10;
+			tens ++;
+		}
+
+		//Serial.println(tens);
+		klok[1] = DSP_digit(tens);
+		klok[0] = DSP_digit(temp);
+		klok[1] &= ~(1 << 0); //kill dots in display
+
+		break;
+	case 7: //factory reset
+		klok[3] = DSP_digit(8);
+		klok[2] = DSP_digit(8);
+		klok[1] = DSP_digit(8);
+		klok[0] = DSP_digit(8);
 		break;
 	case 100:
 		klok[3] = DSP_digit(20);

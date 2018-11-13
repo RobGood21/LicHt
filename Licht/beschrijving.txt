@@ -14,8 +14,8 @@ Fastled meerdere ledstrings mogelijk voorlopig drie pin8-daglicht pin7-verlichti
 schakelaars twee drukknoppen A0 = functies A1=reset DCC programma enz
 
 SW_reg register voor switch status
-bit0
-bit1
+bit0 = factory reset flag
+bit1 = factory reset flag
 bit2
 bit3
 bit4
