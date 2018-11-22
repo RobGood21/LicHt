@@ -57,14 +57,29 @@ COM_set =register for general settings, stores and reads from EEPROM #400
 	//bit6 =free
 	//bit7 =free
 
-Programnummers (prg)
+Programs (prg) and outputs
+Total 32 programs, 32 PRG_reg, 32 PRG_hr, 32 PRG_min
+Total 240pixels in DL, 32 pixels in VL and 8 pixels in FX. 
+Total 40 memorie for program outputs assign to pixels. (led_vlap) 
 0=dl daglicht prg_dl
 1=lightning prg_lightning 
-2=lasser 1 PROG (output)32
-3=lasser 2 PROG 33
-4=fire PROG 34
-5=
-10 tm 19 verlichting start vanaf sunset **onder bewerking
+2=lasser 1  output 32
+3=lasser 2 output 33
+4=fire 1 output 34
+5=fire 2 output 35
+6=TV output 36
+7=
+8=
+9=Traffic nachtstand verkeerslichten
+10 tm 30  verlichting start outputs 0-16 traffic 17-26 straat 27-28
+29=
+30=
+31=
+
+22nov2018 version 1.01
+programs 7,8,29,30,31 are free 
+outputs 29, 30, 31, 37, 38, 39 free
+
 
 Display clock
 Via twee shift registers SN74HC595 Pin 4 (PD4)=serial data out Pin5(PD5)=SRCLK, Shift clock  Pin6(PD6)=RCLK, latch
@@ -75,7 +90,7 @@ bit 0= shift byte (segment, digit) select false = 0(segments)  true= 1(digits)
 bit 1= enable (1) disable (0) shift function start in loop or timer....
 bit 2= enable effects in loop (1)
 bit 3=
-bit 4=efx enabled(0) disabled(1) *******UITGESCHAKELD ????????
+bit 4=
 bit 5=Enable normal operation, waiting for DCC program main adres
 bit 6=model time Clock enable(0) disable(1)
 bit 7=Fastled request
