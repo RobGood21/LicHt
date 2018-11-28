@@ -16,6 +16,7 @@
 #include <eeprom.h>
 
 byte COM_DCCAdres;
+byte COM_DCCmode;
 byte led_al = 0xFF;
 byte Pmax; //to reduce calculations Pmax=Led_al-1
 byte tday = 0xFF; //#501 CV4, tday how long is a modeltimeday in minute 24 is good value lager dan 10 werkt het geheel niet goed
@@ -32,12 +33,12 @@ byte shft[2];
 byte klok[4]; //0=minute low 1=minute dec 2= hr 3=hr dec
 
 CRGB led_dl[240]; //max adressable pixels in daylight not editable
-CRGB led_vl[32]; //max adressable pixels in verlichting not editable
+CRGB led_vl[40]; //max adressable pixels in verlichting not editable
 //tbv van prg_lightning
 CRGB led_lgt[12]; //max aantal leds voor bliksem, dit dient  als geheugen voor de 'oude'waarde van de led
 CRGB led_fx[8]; //array for effects pixels
 
-byte led_vlap[40]; //vlap=verlichting assign program, assigns output of a  program to a pixel (40) 32 in led_vl 8 in led_fx
+byte led_vlap[48]; //vlap=verlichting assign program, assigns output of a  program to a pixel (40) 32 in led_vl 8 in led_fx
 
 byte COM_reg;
 
@@ -112,6 +113,8 @@ void setup() {
 	byte temp;
 	if (EEPROM.read(100) > 200)EEPROM.write(100, 64); //basic decoder adres, max 200
 	COM_DCCAdres = EEPROM.read(100);
+	if (EEPROM.read(101) > 2)EEPROM.write(101, 0);
+	COM_DCCmode = EEPROM.read(101); //DCC mode
 	COM_set = EEPROM.read(400);
 	for (byte i = 0; i < 8; i++) {
 		switch (i) {
@@ -160,7 +163,7 @@ void setup() {
 	}
 	//Pmax = led_al - 1;
 	FastLED.addLeds<NEOPIXEL, 8>(led_dl, 240);//leds on pin 8 'Daglicht' declaration max possible pixels
-	FastLED.addLeds<NEOPIXEL, 7>(led_vl, 32);//create strip of 32leds on pin7 'verlichting'
+	FastLED.addLeds<NEOPIXEL, 7>(led_vl, 40);//create strip of 32leds on pin7 'verlichting'
 	FastLED.addLeds<NEOPIXEL, 9>(led_fx, 8);//create strip of 8 pixels for effects on PIN9	
 	if (EEPROM.read(501) < 10 | EEPROM.read(501) > 60) EEPROM.write(501, 24);
 	tday = EEPROM.read(501); //duur van model-tijd dag instellen
@@ -176,8 +179,8 @@ void setup() {
 	Srspeed = EEPROM.read(510);
 	COM_SrS();
 	//nieuwe vlapper 11sept2018
-	for (int i = 0; i < 40; i++) {
-		if (EEPROM.read(i) == 0xFF) {
+	for (int i = 0; i < 48; i++) {
+		if (EEPROM.read(i) > 47){// == 0xFF) {
 			EEPROM.write(i, i);
 		}
 		led_vlap[i] = EEPROM.read(i);
@@ -194,9 +197,10 @@ void MEM_reset(int start, int aantal) {
 	delay(500);
 }
 void MEM_change() { //called when mem is changed, check all memories
-	if (EEPROM.read(400) != COM_set) {
-		EEPROM.write(400, COM_set);
-	}
+
+	if (EEPROM.read(101) != COM_DCCmode) EEPROM.write(101, COM_DCCmode);
+	if (EEPROM.read(400) != COM_set) EEPROM.write(400, COM_set);
+
 	if (EEPROM.read(500) != led_al) { //qty pixels changed
 		EEPROM.write(500, led_al);
 		COM_SrS();
@@ -801,47 +805,47 @@ void SW_programs() {
 		GPIOR0 |= (1 << 5); //enter DCC receive mode, see APP_COM 
 		DSP_txt(0);
 		break;
-	case 1: //speed of sunrise and sunset effect
+	case 1:  //DCC mode
+		DSP_txt(13);
+		break;
+	case 2: //speed of sunrise and sunset effect
 		DSP_txt(1);
 		break;
-	case 2: //aantal pixels in daglicht
+	case 3: //aantal pixels in daglicht
 		DSP_txt(6);
 		break;
-	case 3: //Duration modeltime day in minutes
+	case 4: //Duration modeltime day in minutes
 		DSP_txt(8);
 		break;
-	case 4: //weather type
+	case 5: //weather type
 		DSP_txt(11);
 		break;
-	case 5: //hour start sunrise
+	case 6: //hour start sunrise
 		DSP_txt(9);
 		break;
-	case 6: //hour start sunset
+	case 7: //hour start sunset
 		DSP_txt(10);
 		break;
-	case 7: //lasser 1 enable modeltijd 		
+	case 8: //lasser 1 enable modeltijd 		
 		DSP_txt(2);
 		LED_on(bitRead(PRG_reg[2], 1));
 		break;
-	case 8: //lasser 2 enable modeltijd
+	case 9: //lasser 2 enable modeltijd
 		DSP_txt(3);
 		LED_on(bitRead(PRG_reg[3], 1));
 		break;
-	case 9: //fire and glow enable model time start
+	case 10: //fire and glow enable model time start
 		DSP_txt(4);
 		LED_on(bitRead(PRG_reg[4], 1));
 		break;
-	case 10: //tv enable modeltime start
+	case 11: //tv enable modeltime start
 		DSP_txt(5);
 		LED_on(bitRead(PRG_reg[6], 1)); //program 6, 5 = fire2
 		break;
-	case 11: //flash, lightning enable modeltime start
+	case 12: //flash, lightning enable modeltime start
 		DSP_txt(12);
 		LED_on(bitRead(COM_set, 0));
 		break;
-
-
-
 	default:
 		DSP_txt(100);
 		break;
@@ -900,20 +904,20 @@ void SW_pixprg(byte sw) {
 	switch (sw) {
 	case 0:
 		SW_count--;
-		if (SW_count > 39) SW_count = 39;
+		if (SW_count > 47) SW_count = 47;
 		break;
 	case 1:
 		SW_count++;
-		if (SW_count > 39) SW_count = 0;
+		if (SW_count > 47) SW_count = 0;
 
 		break;
 	case 2:
 		led_vlap[SW_count] = led_vlap[SW_count] - 1;
-		if (led_vlap[SW_count] > 39)led_vlap[SW_count] = 39;
+		if (led_vlap[SW_count] > 47)led_vlap[SW_count] = 47;
 		break;
 	case 3:
 		led_vlap[SW_count] = led_vlap[SW_count] + 1;
-		if (led_vlap[SW_count] > 39)led_vlap[SW_count] = 0;
+		if (led_vlap[SW_count] > 47)led_vlap[SW_count] = 0;
 		break;
 	}
 	DSP_pix();
@@ -931,57 +935,61 @@ void SW_mainprg(byte sw) {
 		break;
 	case 2: //switch value -
 		switch (prgedit) {
-		case 1: //speed sunset,sunrise
+		case 1: //DCC mode dec
+			if (COM_DCCmode > 0) {
+				COM_DCCmode--;
+				DSP_txt(13);
+			}
+			break;
+		case 2: //speed sunset,sunrise
 			if (Srspeed >= 0) {
 				Srspeed--;
 				DSP_txt(1);
 			}
 			break;
-		case 2: //qty pixels in dl
+
+		case 3: //qty pixels in dl
 			if (led_al > 30)led_al = led_al - 30;
 			DSP_txt(6);
 			break;
-		case 3: //duration modeltime
+		case 4: //duration modeltime
 			if (tday > 10)tday--;
 			DSP_txt(8);
 			break;
-		case 4: //Weather type
+		case 5: //Weather type
 			if (DL_wt > 0) DL_wt--;
 			DSP_txt(11);
 			break;
-
-		case 5:
+		case 6:
 			if (mt_zonop > 5) mt_zonop--;
 			DSP_txt(9);
 			break;
-		case 6:
+		case 7:
 			if (mt_zononder > 18)mt_zononder--;
 			DSP_txt(10);
 			break;
-
-
-		case 7: //lasser 1 off
+		case 8: //lasser 1 off
 			PRG_reg[2] &= ~(1 << 1); //reset model time start
 			COM_set &= ~(1 << 1);
 			LED_on(0);
 			break;
-		case 8: //lasser 2 off
+		case 9: //lasser 2 off
 			PRG_reg[3] &= ~(1 << 1); //reset model time start
 			COM_set &= ~(1 << 2);
 			LED_on(0);
 			break;
-		case 9: //fire and glow
+		case 10: //fire and glow
 			PRG_reg[4] &= ~(1 << 1); //reset modeltime start fire
 			PRG_reg[5] &= ~(1 << 1); //reset modeltime start glow
 			COM_set &= ~(1 << 3); //reset bit in register
 			LED_on(0);
 			break;
-		case 10: //tv
+		case 11: //tv
 			PRG_reg[6] &= ~(1 << 1); //reset modeltime start tv
 			COM_set &= ~(1 << 4); //reset bit in register
 			LED_on(0);
 			break;
-		case 11: //lightning effect starts on modeltime
+		case 12: //lightning effect starts on modeltime
 			COM_set &= ~(1 << 0);
 			LED_on(0);
 			break;
@@ -991,58 +999,60 @@ void SW_mainprg(byte sw) {
 
 	case 3: //switch value +
 		switch (prgedit) {
-		case 1:
+		case 1: //DCC mode inc
+			if (COM_DCCmode < 2) {
+				COM_DCCmode++;
+				DSP_txt(13);
+			}
+			break;
+		case 2:
 			if (Srspeed < 10) {
 				Srspeed++;
 				DSP_txt(1);
 			}
 			break;
-		case 2: //qty pixels in DL
+		case 3: //qty pixels in DL
 			if (led_al < 211)led_al = led_al + 30;
 			DSP_txt(6);
 			break;
-		case 3: //duration modeltime
+		case 4: //duration modeltime
 			if (tday < 60)tday++;
 			DSP_txt(8);
 			break;
-		case 4:
+		case 5:
 			if (DL_wt < 4)DL_wt++;
 			DSP_txt(11);
 			break;
-
-
-		case 5:
+		case 6:
 			if (mt_zonop < 10)mt_zonop++;
 			DSP_txt(9);
 			break;
-		case 6:
+		case 7:
 			if (mt_zononder < 22) mt_zononder++;
 			DSP_txt(10);
 			break;
-
-
-		case 7: //lasser 1 on
+		case 8: //lasser 1 on
 			PRG_reg[2] |= (1 << 1); //set model time start
 			COM_set |= (1 << 1);
 			LED_on(1);
 			break;
-		case 8: //lasser 2 on
+		case 9: //lasser 2 on
 			PRG_reg[3] |= (1 << 1); //set model time start
 			COM_set |= (1 << 2);
 			LED_on(1);
 			break;
-		case 9: //fire on
+		case 10: //fire on
 			PRG_reg[4] |= (1 << 1); //set modeltime start fire
 			PRG_reg[5] |= (1 << 1); //set modeltime start glow
 			COM_set |= (1 << 3); //set bit in register
 			LED_on(1);
 			break;
-		case 10: //tv
+		case 11: //tv
 			PRG_reg[6] |= (1 << 1); //set modeltime start tv
 			COM_set |= (1 << 4); //set bit in register
 			LED_on(1);
 			break;
-		case 11:
+		case 12:
 			COM_set |= (1 << 0);
 			LED_on(1);
 			break;
@@ -1196,9 +1206,9 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 					else {
 						value = 0;
 					}
-					for (byte i = 0; i < 40; i++) {
-						if (i > 31) {
-							led_fx[i - 32] = CRGB(value, value, value);
+					for (byte i = 0; i < 48; i++) {
+						if (i > 39) {
+							led_fx[i - 40] = CRGB(value, value, value);
 						}
 						else {
 							led_vl[i] = CRGB(value, value, value);
@@ -1343,20 +1353,37 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 	}
 }
 void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, boolean onoff, int cv, int value) {
-	int VL_adresmin = (COM_DCCAdres * 4) + 1; //no mistake, COM_DCCadres for decoder = 1 lower, COM_DCCadres+1 1th led adres.
+	int adresmin = (COM_DCCAdres * 4) + 1; //
+	int adresmax;
 	byte pixel;
 	byte prg;
 	byte count = 0;
 	boolean infx = false;
 
-	if (adres >= VL_adresmin & adres < VL_adresmin + 48) { //32 in vl line, 8 in fx line, 2 in programs on/off
-		//byte pixel;
-		pixel = adres - VL_adresmin;
-		if (pixel > 31) infx = true;
+	switch (COM_DCCmode) {
+	case 0:
+		adresmax = adresmin + 8;
+		break;
+	case 1:
+		adresmax = adresmin + 56;
+		break;
+	case 2:
+		adresmax = adresmin + 154;
+		break;
+	}
+
+	if (adres >= adresmin & adres < adresmax) { // 2 in programs on/off, 40 in vl line, 8 in fx line, 
+
+		Serial.println(adres);
+
+		pixel = adres - adresmin;
+
+		if (pixel > 47) infx = true;//		if (pixel > 39) infx = true;
+
 		if (type == false) {//switch or CV
 
 			switch (pixel) { //pixel is hier het DCC ADRES bovenop het main adres
-			case 40: //program 2 Lasser 1
+			case 0: //program 2 Lasser 1
 				if (port == true) {
 					PRG_reg[2] |= (1 << 0);
 					PRG_reg[2] &= ~(1 << 6); //dit zorgt voor vage 'niet willen starten' probleem
@@ -1369,7 +1396,7 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 				}
 				break;
 
-			case 41: //program 3 lasser 2
+			case 1: //program 3 lasser 2
 				if (port == true) {
 					PRG_reg[3] |= (1 << 0);
 					PRG_reg[3] &= ~(1 << 6);
@@ -1378,44 +1405,49 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 					PRG_reg[3] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
 				}
 				break;
-			case 42: //fire1
+			case 2: //fire1
 				if (port == true) {
 					PRG_reg[4] |= (1 << 0);
 
 				}
 				else {
 					PRG_reg[4] &= ~(1 << 0);
-					LED_setPix(34, 0, 0, 0);
+					LED_setPix(42, 0, 0, 0);
 				}
 
 				break;
-			case 43://Fire glow
+			case 3://Fire glow
 				if (port == true) {
 					PRG_reg[5] |= (1 << 0);
 
 				}
 				else {
 					PRG_reg[5] &= ~(1 << 0);
-					LED_setPix(35, 0, 0, 0);
+					LED_setPix(43, 0, 0, 0);
 				}
 				break;
-			case 44: //TV
+			case 4: //TV
 				if (port == true) {
 					PRG_reg[6] |= (1 << 0);
 
 				}
 				else {
 					PRG_reg[6] &= ~(1 << 0);
-					LED_setPix(36, 0, 0, 0);
+					LED_setPix(44, 0, 0, 0);
 				}
 				break;
-			case 47:
+			case 5:
+				break;
+			case 6:
+				break;
+			case 7:
 				//manual start of lightning
 				if (port == true) PRG_lightning();
 				break;
 
 			default:
 				if (infx == false) {
+					pixel = pixel + 8;
 					if (port == true) {
 						led_vl[pixel] = 0xFFFFFF;
 					}
@@ -1424,14 +1456,18 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 					}
 				}
 				else {
+					pixel = pixel - 48;
 					if (port == true) {
-						led_fx[pixel - 32] = 0xFFFFFF;
+						led_fx[pixel] = 0xFFFFFF;
 					}
 					else {
-						led_fx[pixel - 32] = 0x000000;
+						led_fx[pixel] = 0x000000;
 					}
 				}
 				break;
+
+
+
 
 			}
 			//display
@@ -1448,106 +1484,26 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 			klok[3] = DSP_digit(channel);
 		}
 		else {//CV
-			//pixel = adres - VL_adresmin;
-
-			COM_reg |= (1 << 7);
-			switch (cv) { //adres is altijd hier het adres van de decoder. Niet van het channel
-			case 3: //switches on individual leds.
-				//merk op volgorde= niet 11> rood 12 > groen 13> blauw maar 11> groen 12> rood 13> blauw
-				switch (value) {
-				case 11:
-					led_vl[pixel].r = 0xFFFFFF;
-					break;
-				case 12:
-					led_vl[pixel].g = 0xFFFFFF;
-					break;
-				case 13:
-					led_vl[pixel].b = 0xFFFFFF;
-					break;
-				case 21:
-					led_vl[pixel + 1].r = 0xFFFFFF;
-					break;
-				case 22:
-					led_vl[pixel + 1].g = 0xFFFFFF;
-					break;
-				case 23:
-					led_vl[pixel + 1].b = 0xFFFFFF;
-					break;
-				case 31:
-					led_vl[pixel + 2].r = 0xFFFFFF;
-					break;
-				case 32:
-					led_vl[pixel + 2].g = 0xFFFFFF;
-					break;
-				case 33:
-					led_vl[pixel + 2].b = 0xFFFFFF;
-					break;
-				case 41:
-					led_vl[pixel + 3].r = 0xFFFFFF;
-					break;
-				case 42:
-					led_vl[pixel + 3].g = 0xFFFFFF;
-					break;
-				case 43:
-					led_vl[pixel + 3].b = 0xFFFFFF;
-					break;
-				}
-				break;
-
-				/*
-			case 10:
-				led_vlap[pixel] = value;
-				if (EEPROM.read(pixel) !=value) EEPROM.write(pixel, value);
-				break;
-			case 11:
-				pixel = pixel + 1;
-				led_vlap[pixel] = value;
-
-				if (EEPROM.read(pixel) != value) EEPROM.write(pixel, value);
-				break;
-			case 12:
-				pixel = pixel + 2;
-				led_vlap[pixel] = value;
-				if (EEPROM.read(pixel) != value) EEPROM.write(pixel, value);
-				break;
-			case 13:
-				pixel = pixel + 3;
-				led_vlap[pixel] = value;
-				if (EEPROM.read(pixel) != value) EEPROM.write(pixel, value);
-				break;
-*/
-			default: //no valid CV
-				COM_reg &= ~(1 << 7);
-				break;
-			}
-
-			if (bitRead(COM_reg, 7) == true) {
-				COM_reg &= ~(1 << 7);
-				klok[0] = DSP_digit(16);
-				klok[1] = DSP_digit(15);
-				klok[2] = DSP_digit(10);
-				klok[3] = DSP_digit(10);
-			}
 		}
 	}
 }
 void LED_setPix(byte output, byte r, byte g, byte b) {
 	//sets new value for pixel RGB	
-	for (byte i = 0; i < 40; i++) { //check all leds in this group
-		if (i < 32) {
+	for (byte i = 0; i < 48; i++) { //check all leds in this group
+		if (i < 40) {
 			if (led_vlap[i] == output)led_vl[i] = CRGB(r, g, b);
 		}
 		else {
-			if (led_vlap[i] == output)led_fx[i - 32] = CRGB(r, g, b);
+			if (led_vlap[i] == output)led_fx[i - 40] = CRGB(r, g, b);
 		}
 	}
 }
 void LED_setLed(byte output, byte led, byte value) {
 	//sets new value for 1 othe leds in a pixels
 	if (led < 3) {
-		for (byte i = 0; i < 40; i++) { //check all pixels
+		for (byte i = 0; i < 48; i++) { //check all pixels
 			if (led_vlap[i] == output) {
-				if (i < 32) {
+				if (i < 40) {
 					switch (led) {
 					case 0:
 						led_vl[i].r = value;
@@ -1563,13 +1519,13 @@ void LED_setLed(byte output, byte led, byte value) {
 				else {
 					switch (led) {
 					case 0:
-						led_fx[i - 32].r = value;
+						led_fx[i - 40].r = value;
 						break;
 					case 1:
-						led_fx[i - 32].g = value;
+						led_fx[i - 40].g = value;
 						break;
 					case 2:
-						led_fx[i - 32].b = value;
+						led_fx[i - 40].b = value;
 						break;
 					}
 				}
@@ -1580,9 +1536,9 @@ void LED_setLed(byte output, byte led, byte value) {
 void LED_idFxLed(byte prg, byte out, byte led, byte id, byte value) {
 	//moet ook gaan werken op VL leds...
 	byte pix;
-	for (byte i = 0; i < 40; i++) {
+	for (byte i = 0; i < 48; i++) {
 		if (led_vlap[i] == out) {
-			if (i < 32) {
+			if (i < 40) {
 				//vl pixels
 				pix = i;
 				switch (led) {
@@ -1615,7 +1571,7 @@ void LED_idFxLed(byte prg, byte out, byte led, byte id, byte value) {
 			}
 			else {
 				//fx pixels
-				pix = i - 32;
+				pix = i - 40;
 				switch (led) {
 				case 0:
 					if (led_fx[pix].r < value) {
@@ -2272,8 +2228,8 @@ void FX_mtstart(byte prg) {
 
 
 			//in 1 keer uit eventueel kan hier een programma komen om uit te gloeien... 29sept2018
-			LED_setPix(34, 0, 0, 0);
-			LED_setPix(35, 0, 0, 0);
+			LED_setPix(42, 0, 0, 0);
+			LED_setPix(43, 0, 0, 0);
 
 		}
 		else {
@@ -2287,7 +2243,7 @@ void FX_mtstart(byte prg) {
 	case 6: //tv simulation
 		if (bitRead(PRG_reg[6], 0) == true) { //active
 			PRG_reg[6] &= ~(1 << 0);
-			LED_setPix(36, 0, 0, 0); //kill pixel output 36
+			LED_setPix(44, 0, 0, 0); //kill pixel output 36
 			interval(6, random(520, 820), 1); //new start next day
 		}
 		else {
@@ -2776,7 +2732,7 @@ void PRG_las(byte prg, byte out) {
 void PRG_fireglow() {
 
 	PINB | (1 << 5);
-	//prg 5  prog(out 35	
+	//prg 5  prog(out 43
 	static byte red = 0;
 	static byte max;
 	byte green;
@@ -2796,12 +2752,12 @@ void PRG_fireglow() {
 		}
 	}
 	if (red > 100) green = red - 100;
-	LED_setPix(35, red, green, 0);
+	LED_setPix(43, red, green, 0);
 }
 void PRG_fire() {
 	//id PRG_reg bit 0 = true calls every 15ms from loop()
 	//prg =4
-	//PROG, output = 34
+	//PROG, output = 42
 
 	/*
 	PRG_reg
@@ -2816,30 +2772,28 @@ void PRG_fire() {
 	*/
 
 	static byte clr;  //
-	//clr++;
-	///*
-
 	static byte maxmin = 170;
 	static byte speed = 3;
 	if (bitRead(PRG_reg[4], 7) == true) {//cooling down
 		clr = clr - speed;
 		if (clr < maxmin) {
-			maxmin = random(30, 255);
-			speed = random(2, 6);
+			maxmin = random(60, 255);
+			speed = random(2, 8);
 			PRG_reg[4] &= ~(1 << 7);
 		}
 	}
 	else { //heating up
-		clr = clr + speed;
-		if (clr > maxmin) {
-			maxmin = random(10, 150);
+		if (clr + speed > maxmin) {
+			maxmin = random(20, 150);
 			speed = random(1, 8);
 			PRG_reg[4] |= (1 << 7);
 		}
+		else {
+			clr = clr + speed;
+		}
 	}
-
 	//*/
-	FIRE_clr(34, clr);
+	FIRE_clr(42, clr);
 }
 void FIRE_clr(byte out, byte clr) {
 	byte px;
@@ -2872,7 +2826,7 @@ void PRG_tv() {
 	if (led > 2)led = 0;
 	if (count > 20) {
 		count = random(0, 20);
-		LED_setLed(36, led, random(0, 200));
+		LED_setLed(44, led, random(0, 200));
 	}
 }
 void PRG_huis(byte pg, byte out, byte huis) { //pg=program out=output huis=building pixel
@@ -3214,7 +3168,6 @@ void DSP_clock() {
 }
 byte DSP_digit(byte dec) {
 	byte digit;
-
 	switch (dec) {
 	case 0:
 		digit = B11111101;
@@ -3528,6 +3481,13 @@ void DSP_txt(byte txtnum) {
 		klok[1] = DSP_digit(18);
 		klok[0] = DSP_digit(19);
 		break;
+	case 13: //DCC mode
+		klok[3] = DSP_digit(11);
+		klok[2] = DSP_digit(11);
+		klok[1] = DSP_digit(26);
+		klok[0] = DSP_digit(COM_DCCmode);
+
+		break;
 
 	case 100:
 		klok[3] = DSP_digit(20);
@@ -3557,20 +3517,20 @@ void DSP_pix() {
 	byte prg;
 
 	//fills display in pixel program mode, and burn pixel
-	for (byte i = 0; i < 40; i++) {
-		if (i < 32) {
+	for (byte i = 0; i < 48; i++) {
+		if (i < 40) {
 			led_vl[i] = 0x000000;
 		}
 		else {
-			led_fx[i - 32] = 0x000000;
+			led_fx[i - 40] = 0x000000;
 		}
 
 	}
-	if (pix < 32) {
+	if (pix < 40) {
 		led_vl[pix] = 0xFFFFFF;
 	}
 	else {
-		led_fx[pix - 32] = 0xFFFFFF;
+		led_fx[pix - 40] = 0xFFFFFF;
 	}
 
 	prg = led_vlap[pix];
@@ -3747,8 +3707,8 @@ void loop() {
 
 			if (bitRead(GPIOR0, 2) == true) {
 				//fx programs start, must be placed here because of timing issues			
-				if (bitRead(PRG_reg[2], 0) == true) PRG_las(2, 32); //Lasser 1 
-				if (bitRead(PRG_reg[3], 0) == true) PRG_las(3, 33); //Lasser 2 	
+				if (bitRead(PRG_reg[2], 0) == true) PRG_las(2, 40); //Lasser 1 
+				if (bitRead(PRG_reg[3], 0) == true) PRG_las(3, 41); //Lasser 2 	
 				if (bitRead(PRG_reg[4], 0) == true) PRG_fire();
 				if (bitRead(PRG_reg[5], 0) == true) PRG_fireglow();
 				if (bitRead(PRG_reg[6], 0) == true) PRG_tv();
