@@ -78,7 +78,6 @@ byte DEK_Buf4[6];
 byte DEK_Buf5[6];
 
 void setup() {
-	//Serial.println("setup");
 	Serial.begin(9600);
 	DDRB |= (1 << 5);	//pin13
 	DDRB |= (1 << 4);  //Pin12 als output
@@ -150,6 +149,14 @@ void setup() {
 				PRG_reg[6] &= (1 << 1);
 			}
 			break;
+		case 5:
+			if (bitRead(COM_set, 5) == true) {
+				PRG_reg[7] |= (1 << 1);
+			}
+			else {
+				PRG_reg[7] &= (1 << 1);
+			}
+			break;
 		}
 	}
 	temp = EEPROM.read(500);
@@ -180,7 +187,7 @@ void setup() {
 	COM_SrS();
 	//nieuwe vlapper 11sept2018
 	for (int i = 0; i < 48; i++) {
-		if (EEPROM.read(i) > 47){// == 0xFF) {
+		if (EEPROM.read(i) > 47) {// == 0xFF) {
 			EEPROM.write(i, i);
 		}
 		led_vlap[i] = EEPROM.read(i);
@@ -496,11 +503,9 @@ void COM_psmt(byte pn) { //Start program by model time
 	case 1: //lightning wake up in modeltime
 		PRG_lightning();
 		break;
-
 	case 2: //lasser 1
 		FX_mtstart(2);
 		break;
-
 	case 3: //lasser 2
 		FX_mtstart(3);
 		break;
@@ -509,6 +514,20 @@ void COM_psmt(byte pn) { //Start program by model time
 		break;
 	case 6: //TV
 		FX_mtstart(6);
+		break;
+	case 7://disco
+		if (bitRead(PRG_reg[7], 0) == true) {
+			PRG_reg[7] &= ~(1 << 0);
+			interval(7, random(60, 120), 2);
+			LED_setPix(45, 0, 0, 0);
+		}
+		else {		
+			PRG_reg[7] |= (1 << 0);
+			interval(7, random(125, 360), 0);
+
+		}
+		break;
+	case 8:
 		break;
 	case 9: //nachtomschakeling verkeerslichten
 		/*
@@ -527,8 +546,6 @@ void COM_psmt(byte pn) { //Start program by model time
 			for (byte i = 17; i < 27; i++) {
 				LED_setPix(i, 0, 0, 0); //black all traffic lights
 			}
-			//Serial.println(PRG_hr[9]);
-			//Serial.println(PRG_min[9]);
 		}
 		else {
 			PRG_reg[9] |= (1 << 2);
@@ -542,7 +559,6 @@ void COM_psmt(byte pn) { //Start program by model time
 			interval(28, 2, 0);
 			interval(29, 3, 0);
 		}
-
 		break;
 
 	case 10:
@@ -729,6 +745,9 @@ void COM_rt() { //reset timers
 				interval(6, random(510, 780), 1);
 			}
 			break;
+		case 7: //start disco
+			interval(7,random(60,120), 2);
+			break;
 		}
 	}
 	//PRG_huis programma's starttijd instellen
@@ -842,10 +861,15 @@ void SW_programs() {
 		DSP_txt(5);
 		LED_on(bitRead(PRG_reg[6], 1)); //program 6, 5 = fire2
 		break;
-	case 12: //flash, lightning enable modeltime start
+	case 12: //Disco
+		DSP_txt(14);
+		LED_on(bitRead(PRG_reg[7], 1)); //program 6, 5 = fire2
+		break;
+	case 13: //flash, lightning enable modeltime start
 		DSP_txt(12);
 		LED_on(bitRead(COM_set, 0));
 		break;
+
 	default:
 		DSP_txt(100);
 		break;
@@ -891,10 +915,10 @@ void SW_normal(byte sw) {
 		dld_com(0);
 		break;
 	case 2:
-
+		PIX_on(1);
 		break;
 	case 3:
-		PRG_lightning();
+		PIX_on(0);
 		break;
 
 	}
@@ -989,7 +1013,12 @@ void SW_mainprg(byte sw) {
 			COM_set &= ~(1 << 4); //reset bit in register
 			LED_on(0);
 			break;
-		case 12: //lightning effect starts on modeltime
+		case 12: //disco
+			PRG_reg[7] &= ~(1 << 1); //reset modeltime start tv
+			COM_set &= ~(1 << 5); //reset bit in register
+			LED_on(0);
+			break;
+		case 13: //lightning effect starts on modeltime
 			COM_set &= ~(1 << 0);
 			LED_on(0);
 			break;
@@ -1052,7 +1081,12 @@ void SW_mainprg(byte sw) {
 			COM_set |= (1 << 4); //set bit in register
 			LED_on(1);
 			break;
-		case 12:
+		case 12: //disco
+			PRG_reg[7] |= (1 << 1); //set modeltime start tv
+			COM_set |= (1 << 5); //set bit in register
+			LED_on(1);
+			break;
+		case 13: //flash
 			COM_set |= (1 << 0);
 			LED_on(1);
 			break;
@@ -1168,13 +1202,8 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 
 	if (decoder == COM_DCCAdres) {
 		if (type == false) {
-			//check for same command as last, to reduce double commands
-			//not sure if this works correct in all situation, when countering DCC problems check this out.
-
 			if (channel^port^onoff != check) {
-
 				switch (channel) {
-
 				case 1:
 					if (port == true) {
 						COM_reg &= ~(1 << 2);
@@ -1196,24 +1225,11 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 					}
 					break;
 				case 3:
+					//alle verlichting aan of uit tbv. programmeren
+					PIX_on(port);
 					break;
 				case 4:
-					//alle verlichting aan of uit tbv. programmeren
-					byte value;
-					if (port == true) {
-						value = 250;
-					}
-					else {
-						value = 0;
-					}
-					for (byte i = 0; i < 48; i++) {
-						if (i > 39) {
-							led_fx[i - 40] = CRGB(value, value, value);
-						}
-						else {
-							led_vl[i] = CRGB(value, value, value);
-						}
-					}
+					//not used 
 					break;
 				}
 			}
@@ -1332,7 +1348,21 @@ void APP_COM(boolean type, int adres, int decoder, int channel, boolean port, bo
 					break;
 				}
 				break;
-			case 13: //lightning start on modeltime
+			case 13: //disco on modeltime
+				switch (value) {
+				case 0:
+					PRG_reg[7] &= ~(1 << 1);
+					COM_set &= ~(1 << 5);
+					ok = true;
+					break;
+				case 1:
+					PRG_reg[7] |= (1 << 1);
+					COM_set |= (1 << 5);
+					ok = true;
+					break;
+				}
+				break;
+			case 14: //lightning start on modeltime
 				switch (value) {
 				case 0:
 					COM_set &= ~(1 << 0);
@@ -1358,8 +1388,6 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 	byte pixel;
 	byte prg;
 	byte count = 0;
-	boolean infx = false;
-
 	switch (COM_DCCmode) {
 	case 0:
 		adresmax = adresmin + 8;
@@ -1368,122 +1396,130 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 		adresmax = adresmin + 56;
 		break;
 	case 2:
-		adresmax = adresmin + 154;
+		adresmax = adresmin + 152; // 154;
 		break;
 	}
-
 	if (adres >= adresmin & adres < adresmax) { // 2 in programs on/off, 40 in vl line, 8 in fx line, 
-
-		Serial.println(adres);
-
+		//Serial.println(adres);
 		pixel = adres - adresmin;
 
-		if (pixel > 47) infx = true;//		if (pixel > 39) infx = true;
+		switch (pixel) { //pixel is hier het DCC ADRES bovenop het main adres
+		case 0: //program 2 Lasser 1
+			if (port == true) {
+				PRG_reg[2] |= (1 << 0);
+				PRG_reg[2] &= ~(1 << 6); //dit zorgt voor vage 'niet willen starten' probleem
+				//Serial.println("start");
+			}
+			else {
 
-		if (type == false) {//switch or CV
+				PRG_reg[2] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
+				//Serial.println("stop");
+			}
+			break;
 
-			switch (pixel) { //pixel is hier het DCC ADRES bovenop het main adres
-			case 0: //program 2 Lasser 1
+		case 1: //program 3 lasser 2
+			if (port == true) {
+				PRG_reg[3] |= (1 << 0);
+				PRG_reg[3] &= ~(1 << 6);
+			}
+			else {
+				PRG_reg[3] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
+			}
+			break;
+		case 2: //fire1
+			if (port == true) {
+				PRG_reg[4] |= (1 << 0);
+
+			}
+			else {
+				PRG_reg[4] &= ~(1 << 0);
+				LED_setPix(42, 0, 0, 0);
+			}
+
+			break;
+		case 3://Fire glow
+			if (port == true) {
+				PRG_reg[5] |= (1 << 0);
+
+			}
+			else {
+				PRG_reg[5] &= ~(1 << 0);
+				LED_setPix(43, 0, 0, 0);
+			}
+			break;
+		case 4: //TV
+			if (port == true) {
+				PRG_reg[6] |= (1 << 0);
+
+			}
+			else {
+				PRG_reg[6] &= ~(1 << 0);
+				LED_setPix(44, 0, 0, 0);
+			}
+			break;
+		case 5: //Disco
+			if (port == true) {
+				PRG_reg[7] |= (1 << 0);
+			}
+			else {
+				PRG_reg[7] &= ~(1 << 0);
+				LED_setPix(45, 0, 0, 0);
+			}
+			
+			break;
+		case 6:
+			break;
+		case 7:
+			//manual start of lightning
+			if (port == true) PRG_lightning();
+			break;
+		}
+
+		if (COM_DCCmode == 1 & pixel > 7) { //pixel mode
+			pixel = pixel - 8;
+			if (pixel < 40) {
 				if (port == true) {
-					PRG_reg[2] |= (1 << 0);
-					PRG_reg[2] &= ~(1 << 6); //dit zorgt voor vage 'niet willen starten' probleem
-					//Serial.println("start");
+					led_vl[pixel] = 0xFFFFFF;
 				}
 				else {
-
-					PRG_reg[2] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
-					//Serial.println("stop");
+					led_vl[pixel] = 0x000000;
 				}
-				break;
-
-			case 1: //program 3 lasser 2
+			}
+			else {
+				pixel = pixel - 40;
 				if (port == true) {
-					PRG_reg[3] |= (1 << 0);
-					PRG_reg[3] &= ~(1 << 6);
+					led_fx[pixel] = 0xFFFFFF;
 				}
 				else {
-					PRG_reg[3] |= (1 << 6); //request for stop, program will be deactivated in program PRG_las()
+					led_fx[pixel] = 0x000000;
 				}
-				break;
-			case 2: //fire1
-				if (port == true) {
-					PRG_reg[4] |= (1 << 0);
-
-				}
-				else {
-					PRG_reg[4] &= ~(1 << 0);
-					LED_setPix(42, 0, 0, 0);
-				}
-
-				break;
-			case 3://Fire glow
-				if (port == true) {
-					PRG_reg[5] |= (1 << 0);
-
-				}
-				else {
-					PRG_reg[5] &= ~(1 << 0);
-					LED_setPix(43, 0, 0, 0);
-				}
-				break;
-			case 4: //TV
-				if (port == true) {
-					PRG_reg[6] |= (1 << 0);
-
-				}
-				else {
-					PRG_reg[6] &= ~(1 << 0);
-					LED_setPix(44, 0, 0, 0);
-				}
-				break;
-			case 5:
-				break;
-			case 6:
-				break;
-			case 7:
-				//manual start of lightning
-				if (port == true) PRG_lightning();
-				break;
-
-			default:
-				if (infx == false) {
-					pixel = pixel + 8;
-					if (port == true) {
-						led_vl[pixel] = 0xFFFFFF;
-					}
-					else {
-						led_vl[pixel] = 0x000000;
-					}
-				}
-				else {
-					pixel = pixel - 48;
-					if (port == true) {
-						led_fx[pixel] = 0xFFFFFF;
-					}
-					else {
-						led_fx[pixel] = 0x000000;
-					}
-				}
-				break;
-
-
-
-
 			}
 			//display
 			prg = led_vlap[pixel];
-
 			while (prg > 9) {
 				count++;
 				prg = prg - 10;
 			}
-
 			klok[0] = DSP_digit(prg);
 			klok[1] = DSP_digit(count);
 			klok[2] = DSP_digit(14);
 			klok[3] = DSP_digit(channel);
 		}
-		else {//CV
+
+		if (COM_DCCmode == 2 & pixel > 7) { //led mode
+			count = 0;
+			pixel = pixel - 8; //
+			while (pixel > 2) {
+				count++;
+				pixel = pixel - 3;
+			}
+			//nu is count de pixel in de rij, pixel is nu de rest dus welke led in de pixel, aanpassing tussen VL en FX pixels zit in Led_setled
+			if (port == true) {
+				LED_setLed(count, pixel, 255);
+			}
+			else {
+				LED_setLed(count, pixel, 0);
+			}
 		}
 	}
 }
@@ -1622,9 +1658,24 @@ void LED_on(boolean onoff) {
 		PORTB &= ~(1 << 4);
 	}
 }
+void PIX_on(boolean onoff) {
+	byte value;
+	if (onoff == false) {
+		value = 0;
+	}
+	else {
+		value = 255;
+	}
+	for (byte i = 0; i < 48; i++) {
+		if (i > 39) {
+			led_fx[i - 40] = CRGB(value, value, value);
+		}
+		else {
+			led_vl[i] = CRGB(value, value, value);
+		}
+	}
+}
 void PRG_dl() {
-	//static byte temp; //kan straks weg
-
 	static byte fxb; //hoe ver het effect naar het westen
 	static byte rled[3]; //willekeurige byte
 	static byte dl_sp = 1;
@@ -1637,13 +1688,6 @@ void PRG_dl() {
 	static byte weer;
 	static unsigned long dl_t = 0;
 	static byte fase;
-
-	//if (temp != fase) {
-		//temp = fase;
-		//Serial.println(fase);
-	//}
-
-
 	if (micros() - dl_t > SrS) { //speed effect COM_Srs
 		dl_t = micros();
 		if (bitRead(PRG_reg[0], 7) == true) {//called if day/night changes
@@ -1667,8 +1711,8 @@ void PRG_dl() {
 					break;
 				}
 
-				Serial.print(F("Weer: "));
-				Serial.println(weer);
+				//Serial.print(F("Weer: "));
+				//Serial.println(weer);
 
 				fxb = random(2, (led_al / 10) * 7);
 				switch (weer) {
@@ -2829,6 +2873,103 @@ void PRG_tv() {
 		LED_setLed(44, led, random(0, 200));
 	}
 }
+void PRG_disco() {
+	//programma 7 output 45 
+	byte temp;
+	boolean mtstart;
+	static byte led;
+	byte fase;
+	static byte periode;
+	static byte pt; //pc=periode teller
+	static byte ct; //color timer
+	static byte ft; //fase timer
+	static byte fp; //fase periode
+
+	if (pt >= periode) {
+		fase = PRG_reg[7] >> 4;
+		pt = 0;	
+		switch (fase) {
+		case 0:
+			periode = (random(1, 6));
+			//flashing colors
+			led = random(0, 2);
+			for (byte i = 0; i < 3; i++) {
+				if (i == led) {
+					LED_setLed(45, i, 255);
+				}
+				else {
+					LED_setLed(45, i, random(2, 50));
+				}
+			}	
+			
+			//fase = 1;
+			//periode = 1;
+			break;
+
+		case 1:
+			//strobe effect
+			COM_reg ^= (1 << 4);
+			
+			if (bitRead(COM_reg,4)==true) {
+				periode = 0; // (random(0, 2));
+				LED_setPix(45, 255, 255, 255);
+				led = 1;
+			}
+			else {
+				periode = 2;
+				LED_setPix(45, 0, 0, 0);
+				led = 0;
+			}					
+			break;
+		case 2: //color flash
+			if (bitRead(COM_reg, 4) == true) {
+				//choose color
+				led++;
+				if (led > 2)led = 0; random(0, 3);
+
+				//Serial.println(led);
+				LED_setPix(45, 0, 0, 0);
+				ct = 0;
+				COM_reg &= ~(1 << 4);
+			}
+			else {
+				temp = ct + 60;
+				if (ct > temp) {
+					COM_reg |= (1 << 4);
+					LED_setLed(45, led, 255);
+				}
+				else {
+				LED_setLed(45, led, ct);
+				ct = ct + 60;
+				}
+
+
+			}
+			break;
+		}
+		
+		//fase timer
+		if (ft > fp) {
+			temp = fase;
+			//DIT ZOU EEN LUS KUNNEN VEROORZAKEN ALS RANDOM TELKENS HETZELFDE GEEFT
+			while (temp == fase) {
+				fase = random(0, 3);
+			}						
+			ft = 0;
+			fp = (random(20, 120));
+		}
+		ft++;		
+		//restore register
+		ct++;
+		if (bitRead(PRG_reg[7], 1) == true)mtstart = true;
+		PRG_reg[7] = fase;
+		PRG_reg[7] = PRG_reg[7] << 4;
+		if (mtstart == true)PRG_reg[7] |= (1 << 1);
+		PRG_reg[7] |= (1 << 0); //set active
+		GPIOR0 |= (1 << 7);
+	}
+pt++;
+}
 void PRG_huis(byte pg, byte out, byte huis) { //pg=program out=output huis=building pixel
 	//max40xoutput 0-39
 	PRG_reg[pg] = PRG_reg[pg] >> 2;
@@ -3486,7 +3627,13 @@ void DSP_txt(byte txtnum) {
 		klok[2] = DSP_digit(11);
 		klok[1] = DSP_digit(26);
 		klok[0] = DSP_digit(COM_DCCmode);
-
+		break;
+	case 14: //disco
+		klok[3] = DSP_digit(0);
+		klok[2] = DSP_digit(1);
+		klok[1] = DSP_digit(19);
+		klok[0] = DSP_digit(15);
+		klok[1] &= ~(1 << 0); //kill dots in display
 		break;
 
 	case 100:
@@ -3712,12 +3859,13 @@ void loop() {
 				if (bitRead(PRG_reg[4], 0) == true) PRG_fire();
 				if (bitRead(PRG_reg[5], 0) == true) PRG_fireglow();
 				if (bitRead(PRG_reg[6], 0) == true) PRG_tv();
+				if (bitRead(PRG_reg[7], 0) == true) PRG_disco();
 			}
 
 			if (st > 5) { //150ms
 				SW_com();
 				st = 0;
-				PRG_blink();
+				if(bitRead(GPIOR0,6)==false)PRG_blink(); //only if clock runs
 				GPIOR0 |= (1 << 7);
 			}
 			if (bitRead(GPIOR0, 7) == true) {

@@ -42,7 +42,7 @@ COM_reg = register for common booleams only in runtime
 	//bit1 = boolean used in com_switch
 	//bit2 = Dag (false) Nacht(true)
 	//bit3 = test gebruik in loop
-	//bit4 =
+	//bit4 = Disco  flag
 	//bit5 =
 	//bit6 =flag for proces ready
 	//bit7 =used for cv received confirm in display
@@ -53,7 +53,7 @@ COM_set =register for general settings, stores and reads from EEPROM #400
 	//bit2 = lasser 2 modeltime start enable
 	//bit3 = fire and glow model time start enable
 	//bit4 = tv model time start enable
-	//bit5 =free
+	//bit5 = disco modeltime start
 	//bit6 =free
 	//bit7 =free
 
@@ -63,12 +63,12 @@ Total 240pixels in DL, 32 pixels in VL and 8 pixels in FX.
 Total 40 memorie for program outputs assign to pixels. (led_vlap) 
 0=dl daglicht prg_dl
 1=lightning prg_lightning 
-2=lasser 1  output 32
-3=lasser 2 output 33
-4=fire 1 output 34
-5=fire 2 output 35
-6=TV output 36
-7=
+2=lasser 1  output 40
+3=lasser 2 output 41
+4=fire 1 output 42
+5=fire 2 output 43
+6=TV output 44
+7=disco output 45
 8=
 9=Traffic nachtstand verkeerslichten
 10 tm 30  verlichting start outputs 0-16 traffic 17-26 straat 27-28
