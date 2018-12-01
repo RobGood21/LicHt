@@ -523,7 +523,7 @@ void COM_psmt(byte pn) { //Start program by model time
 		}
 		else {		
 			PRG_reg[7] |= (1 << 0);
-			interval(7, random(125, 360), 0);
+			interval(7, random(125, 270), 0);
 
 		}
 		break;
@@ -1126,12 +1126,10 @@ void SW_both() {
 void SW_save() {
 	//save COM_set register
 	MEM_change();
-
 	//saves pixel/program changes
-	for (byte i = 0; i < 40; i++) {
+	for (byte i = 0; i < 48; i++) {
 
-		if (EEPROM.read(i) != led_vlap[i]) {
-			//Serial.println(i);
+		if (EEPROM.read(i) != led_vlap[i]) {	
 			EEPROM.write(i, led_vlap[i]);
 		}
 	}
