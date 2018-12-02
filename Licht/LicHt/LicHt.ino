@@ -3136,7 +3136,7 @@ void PRG_huis(byte pg, byte out, byte huis) { //pg=program out=output huis=build
 		break;
 	case 23:
 		LED_setLed(out, sk, 0); //slaapkamer uit
-		interval(pg, random(10, 30), 1); //wake up sunrise
+		interval(pg, random(5, 10), 1); //wake up sunrise
 		break;
 		//na zonsopgang
 	case 24:
@@ -3145,27 +3145,27 @@ void PRG_huis(byte pg, byte out, byte huis) { //pg=program out=output huis=build
 		break;
 	case 25:
 		LED_setLed(out, da, 250); //daglicht aan
-		interval(pg, random(5, 15), 0); //wake up sunrise
+		interval(pg, random(2, 5), 0); //wake up sunrise
 		break;
 	case 26:
 		LED_setLed(out, sk, 250); // slaapkamer aan
-		interval(pg, random(5, 15), 0);
+		interval(pg, random(2, 5), 0);
 		break;
 	case 27:
 		LED_setLed(out, wc, 255);//wc aan
-		interval(pg, random(10, 20), 0);
+		interval(pg, random(5, 10), 0);
 		break;
 	case 28:
 		LED_setLed(out, wc, 0);//wc uit
-		interval(pg, random(5, 12), 0);
+		interval(pg, random(3, 10), 0);
 		break;
 	case 29:
 		LED_setLed(out, sk, 0); //slaapkamer uit
-		interval(pg, random(5, 15), 0);
+		interval(pg, random(5, 10), 0);
 		break;
 	case 30:
 		LED_setLed(out, hk, 255);//huiskamer aan
-		interval(pg, random(15, 60), 0);
+		interval(pg, random(5, 30), 0);
 		break;
 	case 31:
 		LED_setLed(out, hk, 0);//huiskamer uit
@@ -3273,7 +3273,7 @@ void PRG_straat() {
 		break;
 	case 11: //9:35
 		LED_setPix(28, 0, 0, 0);
-		PRG_hr[30] = mt_zonop - 1;
+		PRG_hr[30] = mt_zononder - 1;
 		PRG_min[30] = 30;
 		fase = 0;
 		break;
