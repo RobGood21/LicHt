@@ -2,7 +2,7 @@
  Name:		LicHt.ino
  Created:	2018
  Author:	Rob Antonisse
- Version: 1.01
+ Version: 1.02 **
 
  LicHT is a project for full automated lighting of the model railroad, including day and night cyclus.
  Based on WS2811 adressable led control.
