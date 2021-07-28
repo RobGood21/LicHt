@@ -4,6 +4,12 @@
  Author:	Rob Antonisse
  Version: 1.02 **
 
+ bugfixed:
+ v1.2 dec2018
+ Lightning model time start fixed
+ DCC mode 2 fixed for control single leds
+ 
+
  LicHT is a project for full automated lighting of the model railroad, including day and night cyclus.
  Based on WS2811 adressable led control.
 
@@ -1397,8 +1403,10 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 		adresmax = adresmin + 152; // 154;
 		break;
 	}
+
+	//Serial.println(adres);
+
 	if (adres >= adresmin & adres < adresmax) { // 2 in programs on/off, 40 in vl line, 8 in fx line, 
-		//Serial.println(adres);
 		pixel = adres - adresmin;
 
 		switch (pixel) { //pixel is hier het DCC ADRES bovenop het main adres
@@ -1512,12 +1520,44 @@ void APP_VL(boolean type, int adres, int decoder, byte channel, boolean port, bo
 				pixel = pixel - 3;
 			}
 			//nu is count de pixel in de rij, pixel is nu de rest dus welke led in de pixel, aanpassing tussen VL en FX pixels zit in Led_setled
+
+
 			if (port == true) {
-				LED_setLed(count, pixel, 255);
+				LED_dcc(count, pixel, 255);
 			}
 			else {
-				LED_setLed(count, pixel, 0);
+				LED_dcc(count, pixel, 0);
 			}
+		}
+	}
+}
+
+void LED_dcc(byte pix,byte led, byte value) {
+	if (pix < 40) { //vl pixels
+		switch (led) {
+		case 0:
+			led_vl[pix].r = value;
+			break;
+		case 1:
+			led_vl[pix].g = value;
+			break;
+		case 2:
+			led_vl[pix].b = value;
+			break;
+		}
+	}
+	else { //FX pixels
+		pix = pix - 40;
+		switch (value) {
+		case 0:
+			led_fx[pix].r = value;
+			break;
+		case 1:
+			led_fx[pix].g = value;
+			break;
+		case 2:
+			led_fx[pix].b = value;
+			break;
 		}
 	}
 }
@@ -2146,6 +2186,9 @@ void PRG_dl() {
 	} //time 
 }
 void PRG_lightning() { //Programnummer=1, lighting starts now
+
+	//Serial.println("bliksem start");
+
 	byte lgt_count = led_al * 5 / 100; //% van leds als lightning
 	static byte lgt_led;
 	static byte lgtfase;
@@ -3792,10 +3835,10 @@ void zwart(byte led, byte dec, byte mr, byte mg, byte mb, boolean stop) {
 }
 void lightningstart(byte kans) { //start lightningeffect op tijd, kans....0=nooit, 1=altijd, 2=50%, 3=33%,  4=25%	
 	byte temp;
-	// Serial.println(F("onweer"));
+	 //Serial.println(kans);
 
 	if (bitRead(COM_set, 0) == true) { //enable start lighting by modeltime		
-		//temp = random(1, kans + 1);
+		temp = random(1, kans + 1);
 		if (temp == 1) {
 			temp = 24 - (mt_zononder - mt_zonop); //set wakeuptime for lightning
 			PRG_hr[1] = mt_zononder + random(0, temp);
@@ -3803,8 +3846,9 @@ void lightningstart(byte kans) { //start lightningeffect op tijd, kans....0=nooi
 			PRG_min[1] = random(0, 59);
 			PRG_reg[1] |= (1 << 1); //enable modeltijd start
 
+			//Serial.println(PRG_hr[1]);
 			//Serial.println(PRG_min[1]);
-			//Serial.println(PRG_hr[1]);/
+
 		}
 	}
 }
